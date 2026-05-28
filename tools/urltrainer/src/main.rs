@@ -1,0 +1,150 @@
+mod args;
+mod config;
+mod counter;
+mod report;
+mod sql;
+mod stats;
+mod url_parts;
+
+use args::Args;
+use clap::Parser;
+use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
+use stats::Stats;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use std::thread;
+use std::time::{Duration, Instant};
+use url_parts::domain_index_to_url;
+
+fn main() -> Result<(), String> {
+    let args = Args::parse();
+    let (line_sender, line_receiver) = bounded::<String>(args.threads * 8);
+    let (stats_sender, stats_receiver) = bounded::<Stats>(args.threads * 4);
+    let processed = Arc::new(AtomicU64::new(0));
+    let mut workers = Vec::new();
+
+    for _ in 0..args.threads {
+        let receiver = line_receiver.clone();
+        let stats_sender = stats_sender.clone();
+        let args = args.clone();
+        let processed = Arc::clone(&processed);
+        workers.push(thread::spawn(move || {
+            worker(receiver, stats_sender, args, processed)
+        }));
+    }
+    drop(stats_sender);
+
+    let aggregator_args = args.clone();
+    let aggregator = thread::spawn(move || aggregate(stats_receiver, aggregator_args));
+
+    sql::read_insert_lines(&args.dump, args.read_order, args.chunk_mib, |line| {
+        line_sender.send(line).map_err(|err| err.to_string())
+    })?;
+    drop(line_sender);
+
+    for worker in workers {
+        worker.join().map_err(|_| "worker panicked")??;
+    }
+
+    let total = aggregator.join().map_err(|_| "aggregator panicked")??;
+    report::write_report(&args, &total)?;
+    println!(
+        "wrote {} (seen={}, sampled={})",
+        args.out.display(),
+        total.seen,
+        total.sampled
+    );
+    Ok(())
+}
+
+fn worker(
+    receiver: Receiver<String>,
+    stats_sender: Sender<Stats>,
+    args: Args,
+    processed: Arc<AtomicU64>,
+) -> Result<(), String> {
+    let mut stats = Stats::new();
+    let mut checkpoint_sampled = 0;
+
+    for line in receiver {
+        for (domain_index, path) in sql::parse_insert_line(&line) {
+            let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
+            stats.seen += 1;
+
+            if args.sample_every != 0 && row % args.sample_every != 0 {
+                continue;
+            }
+            if args.limit != 0 && row / args.sample_every.max(1) > args.limit {
+                continue;
+            }
+
+            let Some(url) = domain_index_to_url(&domain_index, &path) else {
+                continue;
+            };
+            stats.sampled += 1;
+            checkpoint_sampled += 1;
+            stats.add_url(&url);
+
+            if args.checkpoint_rows != 0 && checkpoint_sampled >= args.checkpoint_rows {
+                stats_sender
+                    .send(std::mem::replace(&mut stats, Stats::new()))
+                    .map_err(|err| err.to_string())?;
+                checkpoint_sampled = 0;
+            }
+        }
+    }
+
+    stats_sender.send(stats).map_err(|err| err.to_string())
+}
+
+fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
+    let mut total = Stats::new();
+    let mut last_report = Instant::now();
+    let report_interval = Duration::from_secs(args.report_every_secs.max(1));
+    let partial_path = partial_report_path(&args);
+
+    loop {
+        match receiver.recv_timeout(Duration::from_secs(1)) {
+            Ok(stats) => total.merge(stats),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => break,
+        }
+
+        if last_report.elapsed() >= report_interval && total.seen > 0 {
+            let mut partial_args = args.clone();
+            partial_args.out = partial_path.clone();
+            report::write_report(&partial_args, &total)?;
+            eprintln!(
+                "partial {} (seen={}, sampled={})",
+                partial_args.out.display(),
+                total.seen,
+                total.sampled
+            );
+            last_report = Instant::now();
+        }
+    }
+
+    if total.seen > 0 {
+        let mut partial_args = args.clone();
+        partial_args.out = partial_path;
+        report::write_report(&partial_args, &total)?;
+    }
+
+    Ok(total)
+}
+
+fn partial_report_path(args: &Args) -> std::path::PathBuf {
+    let mut path = args.out.clone();
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("analysis");
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("md");
+    path.set_file_name(format!("{stem}.partial.{extension}"));
+    path
+}

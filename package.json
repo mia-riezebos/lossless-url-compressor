@@ -1,0 +1,22 @@
+{
+  "name": "lossless-url-compressor",
+  "version": "1.0.0",
+  "description": "WIP spec for a stateless, deterministic, lossless URL compressor for `https://l.mia.cx/`.",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14",
+    "vitest": "^4.1.7"
+  }
+}

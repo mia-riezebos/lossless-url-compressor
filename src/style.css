@@ -1,0 +1,44 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.4;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+}
+
+main {
+  max-width: 760px;
+}
+
+label,
+textarea,
+input[type="text"] {
+  display: block;
+  width: 100%;
+}
+
+textarea,
+input[type="text"] {
+  box-sizing: border-box;
+  margin-top: 0.35rem;
+  font: 1rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+fieldset,
+label,
+section {
+  margin-top: 1rem;
+}
+
+#error {
+  color: #c62828;
+  white-space: pre-wrap;
+}
+
+#stats,
+#decoded {
+  overflow-wrap: anywhere;
+}

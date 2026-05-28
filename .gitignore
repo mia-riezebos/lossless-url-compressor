@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+.DS_Store
+*.log
+
+# Rust build output
+target/
+**/target/
