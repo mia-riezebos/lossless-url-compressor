@@ -1,8 +1,10 @@
 mod args;
+mod candidates;
 mod cdxj;
 mod config;
 mod counter;
 mod report;
+mod selector;
 mod sql;
 mod stats;
 mod url_parts;
@@ -59,7 +61,7 @@ fn main() -> Result<(), String> {
     }
 
     let total = aggregator.join().map_err(|_| "aggregator panicked")??;
-    report::write_report(&args, &total)?;
+    report::write_report(&args, &total, true)?;
     println!(
         "wrote {} (seen={}, sampled={})",
         args.out.display(),
@@ -93,6 +95,7 @@ fn worker(
                     };
                     add_sampled_url(
                         &url,
+                        row,
                         &mut stats,
                         &mut checkpoint_sampled,
                         &stats_sender,
@@ -110,6 +113,7 @@ fn worker(
                 if let Some(url) = cdxj::extract_url(&line) {
                     add_sampled_url(
                         &url,
+                        row,
                         &mut stats,
                         &mut checkpoint_sampled,
                         &stats_sender,
@@ -135,14 +139,21 @@ fn should_sample(row: u64, args: &Args) -> bool {
 
 fn add_sampled_url(
     url: &str,
+    _row: u64,
     stats: &mut Stats,
     checkpoint_sampled: &mut u64,
     stats_sender: &Sender<Stats>,
     args: &Args,
 ) -> Result<(), String> {
-    stats.sampled += 1;
+    let sampled_ordinal = stats.sampled + 1;
+    stats.sampled = sampled_ordinal;
     *checkpoint_sampled += 1;
-    stats.add_url(url);
+    let is_heldout = args.heldout_every != 0 && sampled_ordinal % args.heldout_every == 0;
+    let per_worker_heldout_cap = (args.heldout_urls / args.threads.max(1)).max(1);
+    if is_heldout {
+        stats.add_heldout_url(url, per_worker_heldout_cap);
+    }
+    stats.add_url(url, !is_heldout, args.token_cost_bits);
 
     if args.checkpoint_rows != 0 && *checkpoint_sampled >= args.checkpoint_rows {
         stats_sender
@@ -162,7 +173,10 @@ fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
 
     loop {
         match receiver.recv_timeout(Duration::from_secs(1)) {
-            Ok(stats) => total.merge(stats),
+            Ok(stats) => {
+                total.merge(stats);
+                total.heldout_urls.truncate(args.heldout_urls);
+            }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -170,7 +184,7 @@ fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
         if last_report.elapsed() >= report_interval && total.seen > 0 {
             let mut partial_args = args.clone();
             partial_args.out = partial_path.clone();
-            report::write_report(&partial_args, &total)?;
+            report::write_report(&partial_args, &total, false)?;
             eprintln!(
                 "partial {} (seen={}, sampled={})",
                 partial_args.out.display(),
@@ -184,7 +198,7 @@ fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
     if total.seen > 0 {
         let mut partial_args = args.clone();
         partial_args.out = partial_path;
-        report::write_report(&partial_args, &total)?;
+        report::write_report(&partial_args, &total, false)?;
     }
 
     Ok(total)

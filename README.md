@@ -33,7 +33,7 @@ Start with [`SPEC.md`](./SPEC.md).
 
 ## Training
 
-Fast Rust analyzer, recommended while iterating:
+Fast Rust analyzer, recommended while iterating. It now splits sampled URLs into training and held-out sets, filters over-specific candidates, and emits a marginal-gain dictionary selection before the raw frequency table:
 
 ```sh
 cd tools/urltrainer
@@ -42,10 +42,21 @@ cd ../..
 
 ./tools/urltrainer/target/release/urltrainer data/wiki/simplewiki-latest-externallinks.sql \
   --out data/wiki/simplewiki-rust-analysis.md --threads 8 --top 160 \
-  --read-order interleaved --report-every-secs 10
+  --read-order interleaved --heldout-urls 20000 --candidate-pool 512 \
+  --token-budget 128 --report-every-secs 10
 ```
 
-Python model generator still consumes the Markdown analysis format:
+Common Crawl CDXJ shards should be analyzed compressed, not decompressed:
+
+```sh
+./tools/urltrainer/target/release/urltrainer data/commoncrawl/CC-MAIN-2026-21/shards \
+  --format common-crawl-cdxj \
+  --out data/commoncrawl/CC-MAIN-2026-21/commoncrawl-rust-analysis.md \
+  --threads 8 --sample-every 100 --top 160 --heldout-urls 20000 \
+  --candidate-pool 512 --token-budget 128 --report-every-secs 30
+```
+
+Python model generator consumes `Selected dictionary entries` when present, falling back to the raw candidate table for older reports:
 
 ```sh
 python3 scripts/write-trained-model.py data/wiki/simplewiki-rust-analysis.md --out src/model.ts

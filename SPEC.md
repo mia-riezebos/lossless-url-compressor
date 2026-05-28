@@ -424,11 +424,19 @@ https://dumps.wikimedia.org/simplewiki/latest/simplewiki-latest-externallinks.sq
 
 Training goals:
 
-1. Find high-value static dictionary substrings by `(frequency * saved_length) - code_cost`.
+1. Find high-value static dictionary substrings by held-out marginal savings, not raw count.
 2. Estimate token probabilities for entropy coding.
 3. Measure compression ratios by URL class and length bucket.
 4. Detect regressions across versions.
 5. Compare server-safe vs client-max alphabets.
+
+Dictionary selection rule:
+
+```txt
+net_gain = heldout_marginal_saved_bits - dictionary_entry_cost_bits
+```
+
+Candidates are selected greedily by current marginal gain after previously selected tokens have claimed their spans. This handles overlap naturally: if `.com/` covers nearly all useful `.com` occurrences, `.com` becomes shadowed and should not consume another slot. Long entries must repay their model bytes on held-out URLs, not just appear frequently in the training split.
 
 ### Anti-overfit training policy
 

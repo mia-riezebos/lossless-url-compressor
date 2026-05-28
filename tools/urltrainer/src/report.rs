@@ -1,10 +1,11 @@
 use crate::args::Args;
 use crate::counter::top_entries;
+use crate::selector::{select_tokens, SelectionReport};
 use crate::stats::{percentile, scored_candidates, Stats};
 use std::fs::File;
 use std::io::Write;
 
-pub fn write_report(args: &Args, stats: &Stats) -> Result<(), String> {
+pub fn write_report(args: &Args, stats: &Stats, include_selection: bool) -> Result<(), String> {
     if let Some(parent) = args.out.parent() {
         std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
     }
@@ -13,6 +14,8 @@ pub fn write_report(args: &Args, stats: &Stats) -> Result<(), String> {
     writeln!(file, "# URL trainer analysis\n").map_err(|err| err.to_string())?;
     writeln!(file, "Rows seen: {}", stats.seen).map_err(|err| err.to_string())?;
     writeln!(file, "Rows sampled: {}", stats.sampled).map_err(|err| err.to_string())?;
+    writeln!(file, "Training held-out URLs: {}", stats.heldout_urls.len())
+        .map_err(|err| err.to_string())?;
     writeln!(file, "Threads: {}", args.threads).map_err(|err| err.to_string())?;
     writeln!(
         file,
@@ -36,9 +39,22 @@ pub fn write_report(args: &Args, stats: &Stats) -> Result<(), String> {
         &top_entries(&stats.query_keys, args.top),
     )?;
 
+    if include_selection {
+        let selection = select_tokens(&stats.candidates, &stats.heldout_urls, args);
+        write_selection(&mut file, &selection)?;
+    } else {
+        writeln!(
+            file,
+            "## Selected dictionary entries\n\nSkipped for partial report; final report runs held-out marginal selection.\n"
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
     writeln!(file, "## Top candidate dictionary entries\n| candidate | count | saved bits/use | total score |\n| --- | ---: | ---: | ---: |")
         .map_err(|err| err.to_string())?;
-    for (candidate, count, saved_each, score) in scored_candidates(&stats.candidates, args.top) {
+    for (candidate, count, saved_each, score) in
+        scored_candidates(&stats.candidates, args.top, args.token_cost_bits)
+    {
         writeln!(
             file,
             "| `{}` | {} | {} | {} |",
@@ -46,6 +62,28 @@ pub fn write_report(args: &Args, stats: &Stats) -> Result<(), String> {
             count,
             saved_each,
             score
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    writeln!(
+        file,
+        "\n## Rejected overfit candidates\n| candidate | count | reason |\n| --- | ---: | --- |"
+    )
+    .map_err(|err| err.to_string())?;
+    for (candidate, count) in top_entries(&stats.rejected_candidates.counts, args.top) {
+        let reason = stats
+            .rejected_candidates
+            .reasons
+            .get(&candidate)
+            .map(|reason| reason.as_str())
+            .unwrap_or("unknown");
+        writeln!(
+            file,
+            "| `{}` | {} | {} |",
+            escape_md(&candidate),
+            count,
+            reason
         )
         .map_err(|err| err.to_string())?;
     }
@@ -71,6 +109,47 @@ pub fn write_report(args: &Args, stats: &Stats) -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     }
 
+    Ok(())
+}
+
+fn write_selection(file: &mut File, selection: &SelectionReport) -> Result<(), String> {
+    writeln!(
+        file,
+        "## Selected dictionary entries\n\nHeld-out URLs scored: {}  \nCandidate pool: {}\n\n| candidate | train count | saved bits/use | held-out gain bits | dictionary cost bits | net score |\n| --- | ---: | ---: | ---: | ---: | ---: |",
+        selection.heldout_urls, selection.candidate_pool
+    )
+    .map_err(|err| err.to_string())?;
+    for token in &selection.selected {
+        writeln!(
+            file,
+            "| `{}` | {} | {} | {:.1} | {} | {:.1} |",
+            escape_md(&token.candidate),
+            token.training_count,
+            token.saved_bits_per_use,
+            token.heldout_gain_bits,
+            token.dictionary_cost_bits,
+            token.net_score
+        )
+        .map_err(|err| err.to_string())?;
+    }
+
+    writeln!(
+        file,
+        "\n## Rejected by overlap shadowing\n| candidate | train count | initial net score | final net score |\n| --- | ---: | ---: | ---: |"
+    )
+    .map_err(|err| err.to_string())?;
+    for token in &selection.shadowed {
+        writeln!(
+            file,
+            "| `{}` | {} | {:.1} | {:.1} |",
+            escape_md(&token.candidate),
+            token.training_count,
+            token.initial_net_score,
+            token.final_net_score
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    writeln!(file).map_err(|err| err.to_string())?;
     Ok(())
 }
 

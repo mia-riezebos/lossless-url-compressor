@@ -15,6 +15,7 @@ GENERIC_MULTI_SEGMENT_WORDS = {"news", "search", "article", "articles", "index.p
 
 CHAR_ROW = re.compile(r"\| `(.+)` \| (\d+) \|")
 DICT_ROW = re.compile(r"\| `(.+)` \| (\d+) \| (\d+) \| (\d+) \|")
+SELECTED_ROW = re.compile(r"\| `(.+)` \| (\d+) \| (-?\d+) \| ([\d.]+) \| (\d+) \| ([\d.]+) \|")
 
 
 def unescape_table_value(value: str) -> str:
@@ -44,21 +45,43 @@ def parse_chars(markdown: str) -> list[str]:
 
 
 def parse_dictionary(markdown: str) -> list[str]:
+    entries = parse_selected_dictionary(markdown)
+    if entries:
+        return entries
+
     section = parse_section(markdown, "Top candidate dictionary entries")
-    entries: list[str] = []
+    entries = []
 
     for raw, *_ in DICT_ROW.findall(section):
         entry = unescape_table_value(raw)
-        if (
-            entry
-            and all(ord(char) <= 0x7f for char in entry)
-            and not is_exact_registered_domain_pattern(entry)
-            and not is_over_specific_path_group(entry)
-            and entry not in entries
-        ):
+        if is_usable_dictionary_entry(entry, entries):
             entries.append(entry)
 
     return entries
+
+
+def parse_selected_dictionary(markdown: str) -> list[str]:
+    try:
+        section = parse_section(markdown, "Selected dictionary entries")
+    except ValueError:
+        return []
+
+    entries: list[str] = []
+    for raw, *_ in SELECTED_ROW.findall(section):
+        entry = unescape_table_value(raw)
+        if is_usable_dictionary_entry(entry, entries):
+            entries.append(entry)
+    return entries
+
+
+def is_usable_dictionary_entry(entry: str, existing: list[str]) -> bool:
+    return bool(
+        entry
+        and all(ord(char) <= 0x7f for char in entry)
+        and not is_exact_registered_domain_pattern(entry)
+        and not is_over_specific_path_group(entry)
+        and entry not in existing
+    )
 
 
 def is_over_specific_path_group(entry: str) -> bool:

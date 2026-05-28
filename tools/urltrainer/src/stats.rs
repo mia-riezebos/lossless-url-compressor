@@ -1,3 +1,4 @@
+use crate::candidates::{candidate_rejection_reason, RejectedCandidates};
 use crate::config::{COMMON_LITERAL_ALPHABET, LENGTH_BUCKETS, MAX_KEY_LEN};
 use crate::counter::{bump, merge_counter, prune};
 use crate::url_parts::{compression_body, parse_url_parts, public_suffix_len};
@@ -12,6 +13,8 @@ pub struct Stats {
     pub path_segments: HashMap<String, u64>,
     pub query_keys: HashMap<String, u64>,
     pub candidates: HashMap<String, u64>,
+    pub rejected_candidates: RejectedCandidates,
+    pub heldout_urls: Vec<String>,
     pub chars: HashMap<char, u64>,
     pub lengths: Vec<u64>,
 }
@@ -32,6 +35,8 @@ impl Stats {
         merge_counter(&mut self.path_segments, other.path_segments);
         merge_counter(&mut self.query_keys, other.query_keys);
         merge_counter(&mut self.candidates, other.candidates);
+        self.rejected_candidates.merge(other.rejected_candidates);
+        self.heldout_urls.extend(other.heldout_urls);
 
         for (char, count) in other.chars.drain() {
             *self.chars.entry(char).or_default() += count;
@@ -42,7 +47,7 @@ impl Stats {
         prune(&mut self.candidates);
     }
 
-    pub fn add_url(&mut self, url: &str) {
+    pub fn add_url(&mut self, url: &str, collect_candidates: bool, token_cost_bits: usize) {
         let body = compression_body(url);
         for char in body.chars() {
             *self.chars.entry(char).or_default() += 1;
@@ -60,19 +65,33 @@ impl Stats {
             bump(&mut self.tlds, tld, MAX_KEY_LEN);
         }
 
-        self.add_host_shape(&labels, parts.path.starts_with('/'));
-        self.add_path(parts.path);
-        self.add_query(parts.query);
+        if !collect_candidates {
+            return;
+        }
+
+        self.add_host_shape(
+            &labels,
+            host_boundary(parts.path, parts.query),
+            token_cost_bits,
+        );
+        self.add_path(parts.path, token_cost_bits);
+        self.add_query(parts.query, token_cost_bits);
     }
 
-    fn add_host_shape(&mut self, labels: &[&str], has_path: bool) {
+    pub fn add_heldout_url(&mut self, url: &str, max_urls: usize) {
+        if self.heldout_urls.len() < max_urls {
+            self.heldout_urls.push(url.to_string());
+        }
+    }
+
+    fn add_host_shape(&mut self, labels: &[&str], boundary: &str, token_cost_bits: usize) {
         let suffix_len = public_suffix_len(labels);
         if suffix_len > 0 && labels.len() >= suffix_len {
             for size in 1..=suffix_len.min(3) {
                 let suffix = labels[labels.len() - size..].join(".");
-                bump(&mut self.candidates, &format!(".{suffix}"), MAX_KEY_LEN);
-                if has_path {
-                    bump(&mut self.candidates, &format!(".{suffix}/"), MAX_KEY_LEN);
+                self.bump_candidate(&format!(".{suffix}"), token_cost_bits);
+                if !boundary.is_empty() {
+                    self.bump_candidate(&format!(".{suffix}{boundary}"), token_cost_bits);
                 }
             }
         }
@@ -80,20 +99,19 @@ impl Stats {
         let registrable = labels.len().saturating_sub(suffix_len + 1);
         let subdomains = &labels[..registrable];
         for label in subdomains {
-            bump(&mut self.candidates, &format!("{label}."), MAX_KEY_LEN);
+            self.bump_candidate(&format!("{label}."), token_cost_bits);
         }
         for size in 2..=subdomains.len().min(4) {
             for start in 0..=subdomains.len() - size {
-                bump(
-                    &mut self.candidates,
+                self.bump_candidate(
                     &(subdomains[start..start + size].join(".") + "."),
-                    MAX_KEY_LEN,
+                    token_cost_bits,
                 );
             }
         }
     }
 
-    fn add_path(&mut self, path: &str) {
+    fn add_path(&mut self, path: &str, token_cost_bits: usize) {
         let segments: Vec<&str> = path
             .split('/')
             .filter(|segment| !segment.is_empty() && segment.len() <= MAX_KEY_LEN)
@@ -101,12 +119,12 @@ impl Stats {
 
         for segment in &segments {
             bump(&mut self.path_segments, segment, MAX_KEY_LEN);
-            bump(&mut self.candidates, segment, MAX_KEY_LEN);
-            bump(&mut self.candidates, &format!("/{segment}"), MAX_KEY_LEN);
-            bump(&mut self.candidates, &format!("/{segment}/"), MAX_KEY_LEN);
+            self.bump_candidate(segment, token_cost_bits);
+            self.bump_candidate(&format!("/{segment}"), token_cost_bits);
+            self.bump_candidate(&format!("/{segment}/"), token_cost_bits);
             if let Some(dot) = segment.rfind('.') {
                 if dot > 0 && dot + 1 < segment.len() {
-                    bump(&mut self.candidates, &segment[dot..], MAX_KEY_LEN);
+                    self.bump_candidate(&segment[dot..], token_cost_bits);
                 }
             }
         }
@@ -114,13 +132,13 @@ impl Stats {
         for size in 2..=segments.len().min(5) {
             for start in 0..=segments.len() - size {
                 let phrase = "/".to_string() + &segments[start..start + size].join("/");
-                bump(&mut self.candidates, &phrase, MAX_KEY_LEN);
-                bump(&mut self.candidates, &(phrase + "/"), MAX_KEY_LEN);
+                self.bump_candidate(&phrase, token_cost_bits);
+                self.bump_candidate(&(phrase + "/"), token_cost_bits);
             }
         }
     }
 
-    fn add_query(&mut self, query: &str) {
+    fn add_query(&mut self, query: &str, token_cost_bits: usize) {
         let keys: Vec<&str> = query
             .split('&')
             .filter_map(|part| part.split_once('=').map(|(key, _)| key))
@@ -129,20 +147,37 @@ impl Stats {
 
         for key in &keys {
             bump(&mut self.query_keys, key, MAX_KEY_LEN);
-            bump(&mut self.candidates, &format!("?{key}="), MAX_KEY_LEN);
-            bump(&mut self.candidates, &format!("&{key}="), MAX_KEY_LEN);
-            bump(&mut self.candidates, &format!("{key}="), MAX_KEY_LEN);
+            self.bump_candidate(&format!("?{key}="), token_cost_bits);
+            self.bump_candidate(&format!("&{key}="), token_cost_bits);
+            self.bump_candidate(&format!("{key}="), token_cost_bits);
         }
 
         for size in 2..=keys.len().min(4) {
             for start in 0..=keys.len() - size {
-                bump(
-                    &mut self.candidates,
+                self.bump_candidate(
                     &("?".to_string() + &keys[start..start + size].join("=&") + "="),
-                    MAX_KEY_LEN,
+                    token_cost_bits,
                 );
             }
         }
+    }
+
+    fn bump_candidate(&mut self, candidate: &str, token_cost_bits: usize) {
+        if let Some(reason) = candidate_rejection_reason(candidate, token_cost_bits) {
+            self.rejected_candidates.bump(candidate, reason);
+            return;
+        }
+        bump(&mut self.candidates, candidate, MAX_KEY_LEN);
+    }
+}
+
+fn host_boundary(path: &str, query: &str) -> &'static str {
+    if path.starts_with('/') {
+        "/"
+    } else if !query.is_empty() {
+        "?"
+    } else {
+        ""
     }
 }
 
@@ -179,11 +214,12 @@ pub fn percentile(lengths: &[u64], p: f64) -> usize {
 pub fn scored_candidates(
     counter: &HashMap<String, u64>,
     limit: usize,
+    token_cost_bits: usize,
 ) -> Vec<(String, u64, i64, i64)> {
     let mut scored: Vec<_> = counter
         .iter()
         .filter_map(|(candidate, count)| {
-            let saved_each = literal_bits(candidate) as i64 - 12;
+            let saved_each = literal_bits(candidate) as i64 - token_cost_bits as i64;
             (saved_each > 0).then(|| {
                 (
                     candidate.clone(),
