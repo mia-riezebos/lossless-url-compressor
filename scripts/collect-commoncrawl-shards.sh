@@ -24,18 +24,22 @@ fi
 python3 - "${PATHS}" "${COUNT}" "${SAMPLE}" <<'PY'
 import sys
 from pathlib import Path
-paths = Path(sys.argv[1]).read_text().splitlines()
+paths = [
+    path
+    for path in Path(sys.argv[1]).read_text().splitlines()
+    if Path(path).name.startswith("cdx-") and path.endswith(".gz")
+]
 count = int(sys.argv[2])
 out = Path(sys.argv[3])
 if not paths:
-    raise SystemExit("empty path list")
+    raise SystemExit("empty cdx path list")
 if count >= len(paths):
     selected = paths
 else:
     indexes = sorted({round(i * (len(paths) - 1) / (count - 1)) for i in range(count)})
     selected = [paths[i] for i in indexes]
 out.write_text("\n".join(selected) + "\n")
-print(f"selected {len(selected)} of {len(paths)} shards -> {out}")
+print(f"selected {len(selected)} of {len(paths)} cdx shards -> {out}")
 PY
 
 cd "${SHARDS}"
