@@ -47,12 +47,13 @@ xargs -a "../cc-index.sample-${COUNT}.paths" -P "${PARALLEL}" -I{} bash -c '
   set -euo pipefail
   path="$1"
   file="$(basename "$path")"
-  if [[ -s "$file" ]]; then
+  if [[ -s "$file" ]] && gzip -t "$file" >/dev/null 2>&1; then
     echo "exists $file"
     exit 0
   fi
   echo "downloading $file"
-  curl -fL --retry 8 --retry-delay 5 -C - -O "https://data.commoncrawl.org/$path"
+  curl -fL --retry 8 --retry-delay 5 -C - -o "$file" "https://data.commoncrawl.org/$path"
+  gzip -t "$file"
 ' _ {}
 
 du -sh .
