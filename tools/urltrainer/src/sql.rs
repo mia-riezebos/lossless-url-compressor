@@ -1,5 +1,5 @@
 use crate::args::ReadOrder;
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -25,7 +25,7 @@ where
 {
     let file = File::open(path).map_err(|err| err.to_string())?;
     let reader: Box<dyn Read> = if path.extension().is_some_and(|ext| ext == "gz") {
-        Box::new(GzDecoder::new(file))
+        Box::new(MultiGzDecoder::new(file))
     } else {
         Box::new(file)
     };

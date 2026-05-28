@@ -1,4 +1,5 @@
 mod args;
+mod cdxj;
 mod config;
 mod counter;
 mod report;
@@ -6,7 +7,7 @@ mod sql;
 mod stats;
 mod url_parts;
 
-use args::Args;
+use args::{Args, CorpusFormat};
 use clap::Parser;
 use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
 use stats::Stats;
@@ -39,9 +40,18 @@ fn main() -> Result<(), String> {
     let aggregator_args = args.clone();
     let aggregator = thread::spawn(move || aggregate(stats_receiver, aggregator_args));
 
-    sql::read_insert_lines(&args.dump, args.read_order, args.chunk_mib, |line| {
-        line_sender.send(line).map_err(|err| err.to_string())
-    })?;
+    match args.format {
+        CorpusFormat::Externallinks => {
+            sql::read_insert_lines(&args.dump, args.read_order, args.chunk_mib, |line| {
+                line_sender.send(line).map_err(|err| err.to_string())
+            })?;
+        }
+        CorpusFormat::CommonCrawlCdxj => {
+            cdxj::read_cdxj_lines(&args.dump, |line| {
+                line_sender.send(line).map_err(|err| err.to_string())
+            })?;
+        }
+    }
     drop(line_sender);
 
     for worker in workers {
@@ -69,34 +79,79 @@ fn worker(
     let mut checkpoint_sampled = 0;
 
     for line in receiver {
-        for (domain_index, path) in sql::parse_insert_line(&line) {
-            let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
-            stats.seen += 1;
+        match args.format {
+            CorpusFormat::Externallinks => {
+                for (domain_index, path) in sql::parse_insert_line(&line) {
+                    let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                    stats.seen += 1;
+                    if !should_sample(row, &args) {
+                        continue;
+                    }
 
-            if args.sample_every != 0 && row % args.sample_every != 0 {
-                continue;
+                    let Some(url) = domain_index_to_url(&domain_index, &path) else {
+                        continue;
+                    };
+                    add_sampled_url(
+                        &url,
+                        &mut stats,
+                        &mut checkpoint_sampled,
+                        &stats_sender,
+                        &args,
+                    )?;
+                }
             }
-            if args.limit != 0 && row / args.sample_every.max(1) > args.limit {
-                continue;
-            }
+            CorpusFormat::CommonCrawlCdxj => {
+                let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                stats.seen += 1;
+                if !should_sample(row, &args) {
+                    continue;
+                }
 
-            let Some(url) = domain_index_to_url(&domain_index, &path) else {
-                continue;
-            };
-            stats.sampled += 1;
-            checkpoint_sampled += 1;
-            stats.add_url(&url);
-
-            if args.checkpoint_rows != 0 && checkpoint_sampled >= args.checkpoint_rows {
-                stats_sender
-                    .send(std::mem::replace(&mut stats, Stats::new()))
-                    .map_err(|err| err.to_string())?;
-                checkpoint_sampled = 0;
+                if let Some(url) = cdxj::extract_url(&line) {
+                    add_sampled_url(
+                        &url,
+                        &mut stats,
+                        &mut checkpoint_sampled,
+                        &stats_sender,
+                        &args,
+                    )?;
+                }
             }
         }
     }
 
     stats_sender.send(stats).map_err(|err| err.to_string())
+}
+
+fn should_sample(row: u64, args: &Args) -> bool {
+    if args.sample_every != 0 && row % args.sample_every != 0 {
+        return false;
+    }
+    if args.limit != 0 && row / args.sample_every.max(1) > args.limit {
+        return false;
+    }
+    true
+}
+
+fn add_sampled_url(
+    url: &str,
+    stats: &mut Stats,
+    checkpoint_sampled: &mut u64,
+    stats_sender: &Sender<Stats>,
+    args: &Args,
+) -> Result<(), String> {
+    stats.sampled += 1;
+    *checkpoint_sampled += 1;
+    stats.add_url(url);
+
+    if args.checkpoint_rows != 0 && *checkpoint_sampled >= args.checkpoint_rows {
+        stats_sender
+            .send(std::mem::replace(stats, Stats::new()))
+            .map_err(|err| err.to_string())?;
+        *checkpoint_sampled = 0;
+    }
+
+    Ok(())
 }
 
 fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {

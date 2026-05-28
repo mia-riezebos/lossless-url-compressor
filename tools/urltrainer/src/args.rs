@@ -2,6 +2,12 @@ use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum CorpusFormat {
+    Externallinks,
+    CommonCrawlCdxj,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
 pub enum ReadOrder {
     Sequential,
     Interleaved,
@@ -10,6 +16,9 @@ pub enum ReadOrder {
 #[derive(Parser, Debug, Clone)]
 pub struct Args {
     pub dump: PathBuf,
+
+    #[arg(long, value_enum, default_value_t = CorpusFormat::Externallinks)]
+    pub format: CorpusFormat,
 
     #[arg(long, default_value = "data/wiki/simplewiki-rust-analysis.md")]
     pub out: PathBuf,
