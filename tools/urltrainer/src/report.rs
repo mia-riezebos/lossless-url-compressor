@@ -40,7 +40,12 @@ pub fn write_report(args: &Args, stats: &Stats, include_selection: bool) -> Resu
     )?;
 
     if include_selection {
-        let selection = select_tokens(&stats.candidates, &stats.heldout_urls, args);
+        let heldout_urls = stats
+            .heldout_urls
+            .iter()
+            .map(|(_, url)| url.clone())
+            .collect::<Vec<_>>();
+        let selection = select_tokens(&stats.candidates, &heldout_urls, args);
         write_selection(&mut file, &selection)?;
     } else {
         writeln!(

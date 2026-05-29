@@ -14,7 +14,7 @@ pub struct Stats {
     pub query_keys: HashMap<String, u64>,
     pub candidates: HashMap<String, u64>,
     pub rejected_candidates: RejectedCandidates,
-    pub heldout_urls: Vec<String>,
+    pub heldout_urls: Vec<(u64, String)>,
     pub chars: HashMap<char, u64>,
     pub lengths: Vec<u64>,
 }
@@ -78,10 +78,17 @@ impl Stats {
         self.add_query(parts.query, token_cost_bits);
     }
 
-    pub fn add_heldout_url(&mut self, url: &str, max_urls: usize) {
-        if self.heldout_urls.len() < max_urls {
-            self.heldout_urls.push(url.to_string());
+    pub fn add_heldout_url(&mut self, url: &str, key: u64, max_urls: usize) {
+        self.heldout_urls.push((key, url.to_string()));
+        self.truncate_heldout_urls(max_urls);
+    }
+
+    pub fn truncate_heldout_urls(&mut self, max_urls: usize) {
+        if self.heldout_urls.len() <= max_urls {
+            return;
         }
+        self.heldout_urls.sort_by_key(|(key, _)| *key);
+        self.heldout_urls.truncate(max_urls);
     }
 
     fn add_host_shape(&mut self, labels: &[&str], boundary: &str, token_cost_bits: usize) {

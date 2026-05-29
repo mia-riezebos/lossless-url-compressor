@@ -139,7 +139,7 @@ fn should_sample(row: u64, args: &Args) -> bool {
 
 fn add_sampled_url(
     url: &str,
-    _row: u64,
+    row: u64,
     stats: &mut Stats,
     checkpoint_sampled: &mut u64,
     stats_sender: &Sender<Stats>,
@@ -149,9 +149,8 @@ fn add_sampled_url(
     stats.sampled = sampled_ordinal;
     *checkpoint_sampled += 1;
     let is_heldout = args.heldout_every != 0 && sampled_ordinal % args.heldout_every == 0;
-    let per_worker_heldout_cap = (args.heldout_urls / args.threads.max(1)).max(1);
     if is_heldout {
-        stats.add_heldout_url(url, per_worker_heldout_cap);
+        stats.add_heldout_url(url, heldout_key(row), args.heldout_urls);
     }
     stats.add_url(url, !is_heldout, args.token_cost_bits);
 
@@ -165,6 +164,13 @@ fn add_sampled_url(
     Ok(())
 }
 
+fn heldout_key(row: u64) -> u64 {
+    let mut value = row.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
 fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
     let mut total = Stats::new();
     let mut last_report = Instant::now();
@@ -175,7 +181,7 @@ fn aggregate(receiver: Receiver<Stats>, args: Args) -> Result<Stats, String> {
         match receiver.recv_timeout(Duration::from_secs(1)) {
             Ok(stats) => {
                 total.merge(stats);
-                total.heldout_urls.truncate(args.heldout_urls);
+                total.truncate_heldout_urls(args.heldout_urls);
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
