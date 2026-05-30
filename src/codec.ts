@@ -31,9 +31,10 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   const normalized = normalizeForCompression(input);
   const bits = encodeTokenStream(tokenize(normalized.body, options.tokenizer), normalized.httpsOmitted);
   const allowFragment = Boolean(options.allowFragment);
-  const payloadBody = encodeBits(bits, allowFragment ? ASCII_CLIENT_ALPHABET : ASCII_SERVER_ALPHABET);
-  const payload = allowFragment ? `${CLIENT_PAYLOAD_PREFIX}${payloadBody}` : payloadBody;
   const origin = trimTrailingSlashes(options.origin ?? DEFAULT_ORIGIN);
+  const serverPayload = encodeBits(bits, ASCII_SERVER_ALPHABET);
+  const clientPayload = `${CLIENT_PAYLOAD_PREFIX}${encodeBits(bits, ASCII_CLIENT_ALPHABET)}`;
+  const payload = allowFragment && clientPayload.length < serverPayload.length ? clientPayload : serverPayload;
   const shortUrl = `${origin}/${VERSION}/${payload}`;
 
   return {
