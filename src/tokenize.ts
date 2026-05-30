@@ -1,5 +1,7 @@
 import {
   ASCII_SYMBOL,
+  ASCII_STRUCTURED_LENGTH_BITS,
+  BASE64URL_ALPHABET,
   DATE_DAY_BITS,
   DATE_FORMAT_BITS,
   DATE_MONTH_BITS,
@@ -8,12 +10,18 @@ import {
   DATETIME_FORMAT_BITS,
   DICTIONARY,
   EXTENDED_DICTIONARY_BITS,
+  HEX_ALPHABET,
+  LOWER_HYPHEN_ALPHABET,
   MAX_NUMBER_LENGTH,
   MAX_REF_LENGTH,
   MAX_REF_OFFSET,
   MIN_NUMBER_LENGTH,
   MIN_REF_LENGTH,
   NUMBER_SYMBOL,
+  REF_MEDIUM_LENGTH_BITS,
+  REF_MEDIUM_OFFSET_BITS,
+  REF_SMALL_LENGTH_BITS,
+  REF_SMALL_OFFSET_BITS,
   REF_SYMBOL,
   TIME_HOUR_BITS,
   TIME_MILLISECOND_BITS,
@@ -50,6 +58,11 @@ export type Token =
       millisecond: number;
     }
   | { type: "u64"; value: bigint; length: number }
+  | { type: "hex"; value: string; uppercase: boolean; length: number }
+  | { type: "uuid"; value: string; uppercase: boolean; length: number }
+  | { type: "percent"; value: string; uppercase: boolean; length: number }
+  | { type: "base64url"; value: string; length: number }
+  | { type: "lower-hyphen"; value: string; length: number }
   | { type: "ref"; offset: number; length: number };
 
 export type TokenizeOptions = {
@@ -68,7 +81,7 @@ const MAX_U64 = (1n << 64n) - 1n;
 
 export function tokenize(source: string, options: TokenizeOptions = {}): Token[] {
   const resolved = { ...DEFAULT_TOKENIZE_OPTIONS, ...options };
-  const dictionary = resolved.useDictionary ? dictionaryMatches : () => [];
+  const dictionary = resolved.useDictionary ? dictionaryAndStructuredMatches : () => [];
   const numbers = resolved.useNumbers ? numericMatches : () => [];
   const references = resolved.useReferences ? referencesAt : () => [];
   return tokenizeWithCandidates(source, dictionary, numbers, references);
@@ -130,6 +143,17 @@ export function materialize(tokens: Token[], seed = ""): string {
       continue;
     }
 
+    if (
+      token.type === "hex" ||
+      token.type === "uuid" ||
+      token.type === "percent" ||
+      token.type === "base64url" ||
+      token.type === "lower-hyphen"
+    ) {
+      output += token.value;
+      continue;
+    }
+
     if (token.offset < 1 || token.offset > output.length) {
       throw new Error(`Invalid reference offset: ${token.offset}`);
     }
@@ -145,10 +169,15 @@ export function materialize(tokens: Token[], seed = ""): string {
 export function tokenCost(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) === undefined ? 13 : 6;
   if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
-  if (token.type === "ref") return 24;
+  if (token.type === "ref") return refCost(token.offset, token.length);
   if (token.type === "date") return 6 + datePayloadBits();
   if (token.type === "datetime") return 6 + dateTimePayloadBits(token.format === "iso-ms-z");
   if (token.type === "u64") return 6 + 6 + U64_BITS;
+  if (token.type === "hex") return asciiStructuredHeaderBits() + 1 + 4 * token.length;
+  if (token.type === "uuid") return 6 + 7 + 1 + 128;
+  if (token.type === "percent") return asciiStructuredHeaderBits() + 1 + 8 * token.length;
+  if (token.type === "base64url") return asciiStructuredHeaderBits() + 6 * token.length;
+  if (token.type === "lower-hyphen") return asciiStructuredHeaderBits() + 5 * token.length;
 
   return 6 + 6 + decimalBitWidth(token.length);
 }
@@ -170,6 +199,80 @@ function candidatesAt(
   return candidates;
 }
 
+function dictionaryAndStructuredMatches(source: string, position: number): Token[] {
+  return [...dictionaryMatches(source, position), ...structuredTextMatches(source, position)];
+}
+
+function structuredTextMatches(source: string, position: number): Token[] {
+  return [
+    ...uuidMatch(source, position),
+    ...percentEncodedRun(source, position),
+    ...hexRun(source, position),
+    ...base64UrlRun(source, position),
+    ...lowerHyphenRun(source, position),
+  ];
+}
+
+function uuidMatch(source: string, position: number): Token[] {
+  const text = source.slice(position, position + 36);
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(text)) {
+    return [];
+  }
+
+  const casing = hexCasing(text.replaceAll("-", ""));
+  return casing === undefined ? [] : [{ type: "uuid", value: text, uppercase: casing, length: text.length }];
+}
+
+function percentEncodedRun(source: string, position: number): Token[] {
+  let cursor = position;
+  let bytes = 0;
+  let hex = "";
+
+  while (bytes < 64 && source[cursor] === "%" && isHexPair(source, cursor + 1)) {
+    hex += source.slice(cursor + 1, cursor + 3);
+    cursor += 3;
+    bytes += 1;
+  }
+
+  if (bytes < 3) return [];
+
+  const casing = hexCasing(hex);
+  return casing === undefined ? [] : [{ type: "percent", value: source.slice(position, cursor), uppercase: casing, length: bytes }];
+}
+
+function hexRun(source: string, position: number): Token[] {
+  const match = /^[0-9a-fA-F]{11,64}/.exec(source.slice(position, position + 64));
+  if (!match) return [];
+
+  const casing = hexCasing(match[0]);
+  return casing === undefined ? [] : [{ type: "hex", value: match[0], uppercase: casing, length: match[0].length }];
+}
+
+function base64UrlRun(source: string, position: number): Token[] {
+  const match = /^[A-Za-z0-9_-]{8,64}/.exec(source.slice(position, position + 64));
+  return match ? [{ type: "base64url", value: match[0], length: match[0].length }] : [];
+}
+
+function lowerHyphenRun(source: string, position: number): Token[] {
+  const match = /^[a-z-]{12,64}/.exec(source.slice(position, position + 64));
+  return match ? [{ type: "lower-hyphen", value: match[0], length: match[0].length }] : [];
+}
+
+function isHexPair(source: string, position: number): boolean {
+  return /^[0-9a-fA-F]{2}$/.test(source.slice(position, position + 2));
+}
+
+function hexCasing(hex: string): boolean | undefined {
+  const hasLower = /[a-f]/.test(hex);
+  const hasUpper = /[A-F]/.test(hex);
+  if (hasLower && hasUpper) return undefined;
+  return hasUpper;
+}
+
+function asciiStructuredHeaderBits(): number {
+  return 6 + 7 + ASCII_STRUCTURED_LENGTH_BITS;
+}
+
 function dictionaryMatches(source: string, position: number): Token[] {
   const matches: Token[] = [];
   for (let id = 0; id < DICTIONARY.length; id += 1) {
@@ -184,7 +287,17 @@ function dictionaryMatches(source: string, position: number): Token[] {
 function nextPosition(token: Token, position: number): number {
   if (token.type === "lit") return position + token.value.length;
   if (token.type === "dict") return position + token.value.length;
-  if (token.type === "date" || token.type === "datetime") return position + token.value.length;
+  if (
+    token.type === "date" ||
+    token.type === "datetime" ||
+    token.type === "hex" ||
+    token.type === "uuid" ||
+    token.type === "percent" ||
+    token.type === "base64url" ||
+    token.type === "lower-hyphen"
+  ) {
+    return position + token.value.length;
+  }
   return position + token.length;
 }
 
@@ -314,6 +427,17 @@ export function dateTimePayloadBits(hasMilliseconds: boolean): number {
   return datePayloadBits() + DATETIME_FORMAT_BITS - DATE_FORMAT_BITS + TIME_HOUR_BITS + TIME_MINUTE_BITS + TIME_SECOND_BITS + (hasMilliseconds ? TIME_MILLISECOND_BITS : 0);
 }
 
+function refCost(offset: number, length: number): number {
+  const encodedLength = length - MIN_REF_LENGTH;
+  if (offset < (1 << REF_SMALL_OFFSET_BITS) && encodedLength < (1 << REF_SMALL_LENGTH_BITS)) {
+    return 6 + 1 + REF_SMALL_OFFSET_BITS + REF_SMALL_LENGTH_BITS;
+  }
+  if (offset < (1 << REF_MEDIUM_OFFSET_BITS) && encodedLength < (1 << REF_MEDIUM_LENGTH_BITS)) {
+    return 6 + 2 + REF_MEDIUM_OFFSET_BITS + REF_MEDIUM_LENGTH_BITS;
+  }
+  return 6 + 2 + 12 + 6;
+}
+
 function referencesAt(source: string, position: number): Token[] {
   const searchStart = Math.max(0, position - MAX_REF_OFFSET);
   const refs: Token[] = [];
@@ -349,6 +473,13 @@ function referencesAt(source: string, position: number): Token[] {
 export function tokenSymbol(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) ?? ASCII_SYMBOL;
   if (token.type === "dict") return dictionarySymbol(token.id);
-  if (["num", "date", "datetime", "u64"].includes(token.type)) return NUMBER_SYMBOL;
+  if (token.type === "num" || token.type === "date" || token.type === "datetime" || token.type === "u64") return NUMBER_SYMBOL;
+  if (
+    token.type === "hex" ||
+    token.type === "uuid" ||
+    token.type === "percent" ||
+    token.type === "base64url" ||
+    token.type === "lower-hyphen"
+  ) return ASCII_SYMBOL;
   return REF_SYMBOL;
 }

@@ -170,6 +170,12 @@ if (EXTENDED_DICTIONARY.length > 128) {
 export const MIN_REF_LENGTH = 4;
 export const MAX_REF_LENGTH = MIN_REF_LENGTH + 63;
 export const MAX_REF_OFFSET = 4095;
+export const REF_SMALL_OFFSET_BITS = 4;
+export const REF_SMALL_LENGTH_BITS = 4;
+export const REF_MEDIUM_OFFSET_BITS = 8;
+export const REF_MEDIUM_LENGTH_BITS = 5;
+export const REF_LARGE_OFFSET_BITS = 12;
+export const REF_LARGE_LENGTH_BITS = 6;
 export const MIN_NUMBER_LENGTH = 4;
 export const MAX_NUMBER_LENGTH = 64;
 
@@ -187,6 +193,16 @@ export const TIME_MINUTE_BITS = 6;
 export const TIME_SECOND_BITS = 6;
 export const TIME_MILLISECOND_BITS = 10;
 export const U64_BITS = 64;
+
+export const ASCII_HEX_CODE = 0;
+export const ASCII_UUID_CODE = 1;
+export const ASCII_PERCENT_CODE = 2;
+export const ASCII_BASE64URL_CODE = 3;
+export const ASCII_LOWER_HYPHEN_CODE = 4;
+export const ASCII_STRUCTURED_LENGTH_BITS = 6;
+export const HEX_ALPHABET = "0123456789abcdef";
+export const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+export const LOWER_HYPHEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz-";
 
 export function literalSymbol(char: string): number | undefined {
   const index = LITERAL_ALPHABET.indexOf(char);

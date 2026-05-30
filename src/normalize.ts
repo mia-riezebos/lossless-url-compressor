@@ -70,8 +70,12 @@ function findPortStart(hostPort: string): number {
 
 function assertAscii(value: string): void {
   for (const char of value) {
-    if (char.charCodeAt(0) > 0x7f) {
+    const code = char.charCodeAt(0);
+    if (code > 0x7f) {
       throw new Error("MVP ASCII-safe codec does not support non-ASCII input yet");
+    }
+    if (code < 0x20 || code === 0x7f) {
+      throw new Error("Input URL must not contain ASCII control characters");
     }
   }
 }

@@ -91,6 +91,30 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encoded.payload)).toBe(source);
   });
 
+  it("packs UUIDs and long hex runs", () => {
+    const uuidSource = "https://example.com/items/550e8400-e29b-41d4-a716-446655440000";
+    const hexSource = "https://example.com/commit/0123456789abcdef0123456789abcdef01234567";
+
+    expect(decodeUrlPayload(encodeUrl(uuidSource).payload)).toBe(uuidSource);
+    expect(encodeUrl(uuidSource).stats.payloadLength).toBeLessThan(encodeUrl(uuidSource, { tokenizer: { useDictionary: false } }).stats.payloadLength);
+    expect(decodeUrlPayload(encodeUrl(hexSource).payload)).toBe(hexSource);
+  });
+
+  it("packs percent-encoded byte runs", () => {
+    const source = "https://example.com/redirect?to=https%3A%2F%2Fexample.org%2Ffoo%3Fx%3D1";
+    const encoded = encodeUrl(source);
+
+    expect(encoded.stats.payloadLength).toBeLessThan(encodeUrl(source, { tokenizer: { useDictionary: false } }).stats.payloadLength);
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
+  });
+
+  it("packs URL-safe base64-ish ids and long lowercase hyphen slugs", () => {
+    const source = "https://youtu.be/dQw4w9WgXcQ/how-to-build-a-stateless-lossless-url-compressor";
+    const encoded = encodeUrl(source);
+
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
+  });
+
   it("keeps # out of server-safe payloads", () => {
     const encoded = encodeUrl("https://example.com/a#frag", { allowFragment: false });
 

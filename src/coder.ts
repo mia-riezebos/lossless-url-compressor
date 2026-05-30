@@ -1,6 +1,13 @@
 import { BitReader, BitWriter } from "./bitstream";
 import {
+  ASCII_BASE64URL_CODE,
+  ASCII_HEX_CODE,
+  ASCII_LOWER_HYPHEN_CODE,
+  ASCII_PERCENT_CODE,
+  ASCII_STRUCTURED_LENGTH_BITS,
   ASCII_SYMBOL,
+  ASCII_UUID_CODE,
+  BASE64URL_ALPHABET,
   DATE_DAY_BITS,
   DATE_FORMAT_BITS,
   DATE_MONTH_BITS,
@@ -10,12 +17,20 @@ import {
   END_SYMBOL,
   EXT_DICT_SYMBOL,
   EXTENDED_DICTIONARY_BITS,
+  HEX_ALPHABET,
   LITERAL_ALPHABET,
+  LOWER_HYPHEN_ALPHABET,
   MIN_REF_LENGTH,
   NUMBER_DATE_CODE,
   NUMBER_DATETIME_CODE,
   NUMBER_SYMBOL,
   NUMBER_U64_CODE,
+  REF_LARGE_LENGTH_BITS,
+  REF_LARGE_OFFSET_BITS,
+  REF_MEDIUM_LENGTH_BITS,
+  REF_MEDIUM_OFFSET_BITS,
+  REF_SMALL_LENGTH_BITS,
+  REF_SMALL_OFFSET_BITS,
   REF_SYMBOL,
   TIME_HOUR_BITS,
   TIME_MILLISECOND_BITS,
@@ -37,6 +52,31 @@ export function encodeTokenStream(tokens: Token[], httpsOmitted: boolean): numbe
 
   for (const token of tokens) {
     writer.write(tokenSymbol(token), 6);
+
+    if (token.type === "hex") {
+      writeHex(writer, token.value, token.uppercase);
+      continue;
+    }
+
+    if (token.type === "uuid") {
+      writeUuid(writer, token.value, token.uppercase);
+      continue;
+    }
+
+    if (token.type === "percent") {
+      writePercentRun(writer, token.value, token.uppercase);
+      continue;
+    }
+
+    if (token.type === "base64url") {
+      writeAlphabetRun(writer, ASCII_BASE64URL_CODE, token.value, BASE64URL_ALPHABET);
+      continue;
+    }
+
+    if (token.type === "lower-hyphen") {
+      writeAlphabetRun(writer, ASCII_LOWER_HYPHEN_CODE, token.value, LOWER_HYPHEN_ALPHABET);
+      continue;
+    }
 
     if (token.type === "lit" && literalSymbol(token.value) === undefined) {
       writer.write(token.value.charCodeAt(0), 7);
@@ -73,8 +113,7 @@ export function encodeTokenStream(tokens: Token[], httpsOmitted: boolean): numbe
     }
 
     if (token.type === "ref") {
-      writer.write(token.offset, 12);
-      writer.write(token.length - MIN_REF_LENGTH, 6);
+      writeReference(writer, token.offset, token.length);
     }
   }
 
@@ -102,7 +141,7 @@ export function decodeTokenStream(bits: number[]): { httpsOmitted: boolean; body
     }
 
     if (symbol === ASCII_SYMBOL) {
-      body += String.fromCharCode(reader.read(7));
+      body += readAsciiEscaped(reader);
       continue;
     }
 
@@ -112,8 +151,7 @@ export function decodeTokenStream(bits: number[]): { httpsOmitted: boolean; body
     }
 
     if (symbol === REF_SYMBOL) {
-      const offset = reader.read(12);
-      const length = reader.read(6) + MIN_REF_LENGTH;
+      const { offset, length } = readReference(reader);
       if (offset < 1 || offset > body.length) {
         throw new Error(`Invalid reference offset: ${offset}`);
       }
@@ -137,6 +175,159 @@ export function decodeTokenStream(bits: number[]): { httpsOmitted: boolean; body
   }
 
   throw new Error("Missing end token");
+}
+
+function writeReference(writer: BitWriter, offset: number, length: number): void {
+  const encodedLength = length - MIN_REF_LENGTH;
+
+  if (offset < (1 << REF_SMALL_OFFSET_BITS) && encodedLength < (1 << REF_SMALL_LENGTH_BITS)) {
+    writer.write(0, 1);
+    writer.write(offset, REF_SMALL_OFFSET_BITS);
+    writer.write(encodedLength, REF_SMALL_LENGTH_BITS);
+    return;
+  }
+
+  if (offset < (1 << REF_MEDIUM_OFFSET_BITS) && encodedLength < (1 << REF_MEDIUM_LENGTH_BITS)) {
+    writer.write(0b10, 2);
+    writer.write(offset, REF_MEDIUM_OFFSET_BITS);
+    writer.write(encodedLength, REF_MEDIUM_LENGTH_BITS);
+    return;
+  }
+
+  writer.write(0b11, 2);
+  writer.write(offset, REF_LARGE_OFFSET_BITS);
+  writer.write(encodedLength, REF_LARGE_LENGTH_BITS);
+}
+
+function readReference(reader: BitReader): { offset: number; length: number } {
+  if (reader.read(1) === 0) {
+    return {
+      offset: reader.read(REF_SMALL_OFFSET_BITS),
+      length: reader.read(REF_SMALL_LENGTH_BITS) + MIN_REF_LENGTH,
+    };
+  }
+
+  if (reader.read(1) === 0) {
+    return {
+      offset: reader.read(REF_MEDIUM_OFFSET_BITS),
+      length: reader.read(REF_MEDIUM_LENGTH_BITS) + MIN_REF_LENGTH,
+    };
+  }
+
+  return {
+    offset: reader.read(REF_LARGE_OFFSET_BITS),
+    length: reader.read(REF_LARGE_LENGTH_BITS) + MIN_REF_LENGTH,
+  };
+}
+
+function writeHex(writer: BitWriter, value: string, uppercase: boolean): void {
+  writer.write(ASCII_HEX_CODE, 7);
+  writer.write(value.length - 1, ASCII_STRUCTURED_LENGTH_BITS);
+  writer.write(uppercase ? 1 : 0, 1);
+  writeHexDigits(writer, value);
+}
+
+function writeUuid(writer: BitWriter, value: string, uppercase: boolean): void {
+  writer.write(ASCII_UUID_CODE, 7);
+  writer.write(uppercase ? 1 : 0, 1);
+  writeHexDigits(writer, value.replaceAll("-", ""));
+}
+
+function writePercentRun(writer: BitWriter, value: string, uppercase: boolean): void {
+  writer.write(ASCII_PERCENT_CODE, 7);
+  writer.write(value.length / 3 - 1, ASCII_STRUCTURED_LENGTH_BITS);
+  writer.write(uppercase ? 1 : 0, 1);
+
+  for (let index = 0; index < value.length; index += 3) {
+    writer.write(Number.parseInt(value.slice(index + 1, index + 3), 16), 8);
+  }
+}
+
+function writeAlphabetRun(writer: BitWriter, code: number, value: string, alphabet: string): void {
+  writer.write(code, 7);
+  writer.write(value.length - 1, ASCII_STRUCTURED_LENGTH_BITS);
+
+  const width = Math.ceil(Math.log2(alphabet.length));
+  for (const char of value) {
+    const index = alphabet.indexOf(char);
+    if (index === -1) throw new Error(`Character ${char} is not in structured alphabet`);
+    writer.write(index, width);
+  }
+}
+
+function writeHexDigits(writer: BitWriter, value: string): void {
+  for (const char of value.toLowerCase()) {
+    const index = HEX_ALPHABET.indexOf(char);
+    if (index === -1) throw new Error(`Invalid hex digit: ${char}`);
+    writer.write(index, 4);
+  }
+}
+
+function readAsciiEscaped(reader: BitReader): string {
+  const code = reader.read(7);
+
+  if (code === ASCII_HEX_CODE) return readHex(reader);
+  if (code === ASCII_UUID_CODE) return readUuid(reader);
+  if (code === ASCII_PERCENT_CODE) return readPercentRun(reader);
+  if (code === ASCII_BASE64URL_CODE) return readAlphabetRun(reader, BASE64URL_ALPHABET);
+  if (code === ASCII_LOWER_HYPHEN_CODE) return readAlphabetRun(reader, LOWER_HYPHEN_ALPHABET);
+
+  return String.fromCharCode(code);
+}
+
+function readHex(reader: BitReader): string {
+  const length = reader.read(ASCII_STRUCTURED_LENGTH_BITS) + 1;
+  const uppercase = reader.read(1) === 1;
+  return readHexDigits(reader, length, uppercase);
+}
+
+function readUuid(reader: BitReader): string {
+  const uppercase = reader.read(1) === 1;
+  const hex = readHexDigits(reader, 32, uppercase);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function readPercentRun(reader: BitReader): string {
+  const length = reader.read(ASCII_STRUCTURED_LENGTH_BITS) + 1;
+  const uppercase = reader.read(1) === 1;
+  let output = "";
+
+  for (let index = 0; index < length; index += 1) {
+    output += `%${padHex(reader.read(8), uppercase)}`;
+  }
+
+  return output;
+}
+
+function readAlphabetRun(reader: BitReader, alphabet: string): string {
+  const length = reader.read(ASCII_STRUCTURED_LENGTH_BITS) + 1;
+  const width = Math.ceil(Math.log2(alphabet.length));
+  let output = "";
+
+  for (let index = 0; index < length; index += 1) {
+    const char = alphabet[reader.read(width)];
+    if (char === undefined) throw new Error("Invalid structured alphabet index");
+    output += char;
+  }
+
+  return output;
+}
+
+function readHexDigits(reader: BitReader, length: number, uppercase: boolean): string {
+  let output = "";
+
+  for (let index = 0; index < length; index += 1) {
+    const digit = HEX_ALPHABET[reader.read(4)];
+    if (digit === undefined) throw new Error("Invalid hex digit index");
+    output += uppercase ? digit.toUpperCase() : digit;
+  }
+
+  return output;
+}
+
+function padHex(value: number, uppercase: boolean): string {
+  const hex = value.toString(16).padStart(2, "0");
+  return uppercase ? hex.toUpperCase() : hex;
 }
 
 function readNumberLike(reader: BitReader): string {
