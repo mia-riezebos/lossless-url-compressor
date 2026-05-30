@@ -1,6 +1,6 @@
 # Lossless URL Compressor
 
-WIP spec plus TypeScript proof of concept for a stateless, deterministic, lossless URL compressor for `https://l.mia.cx/`.
+WIP spec plus TypeScript proof of concept for a stateless, deterministic, lossless URL compressor for `https://piss.zip/`.
 
 ## Run
 
