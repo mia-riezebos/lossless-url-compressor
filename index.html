@@ -8,7 +8,7 @@
   <body>
     <main>
       <h1>Lossless URL Compressor</h1>
-      <p>Compresses URLs with a trained URL dictionary, numeric/date packing, and repeated-text references. Decoding is stateless and redirects directly to the original URL.</p>
+      <p>A URL-aware LZ-style encoder: it tokenizes common URL structure with a dictionary trained on Common Crawl indexes, packs numbers/dates/IDs, then back-references repeated text.</p>
 
       <label>
         Input URL
@@ -17,7 +17,7 @@
 
       <div class="options">
         <label><input id="allow-fragment" type="checkbox" /> Fragment</label>
-        <label><input id="use-cjk-payload" type="checkbox" /> CJK</label>
+        <label title="CJK Unicode in URLs is not strictly RFC-supported, but browsers normalize it and percent-escape it on the wire."><input id="use-cjk-payload" type="checkbox" checked /> CJK (extended charset)</label>
       </div>
 
       <label>
