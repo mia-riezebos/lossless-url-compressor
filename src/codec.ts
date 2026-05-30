@@ -2,7 +2,7 @@ import { ASCII_CLIENT_ALPHABET, ASCII_SERVER_ALPHABET, hasClientFragment, isAsci
 import { decodeTokenStream, encodeTokenStream } from "./coder";
 import { normalizeForCompression } from "./normalize";
 import { decodeBits, encodeBits } from "./radix";
-import { tokenize } from "./tokenize";
+import { type TokenizeOptions, tokenize } from "./tokenize";
 
 export const VERSION = "0";
 export const DEFAULT_ORIGIN = "https://l.mia.cx";
@@ -11,6 +11,7 @@ const CLIENT_PAYLOAD_PREFIX = "#";
 export type EncodeOptions = {
   allowFragment?: boolean;
   origin?: string;
+  tokenizer?: TokenizeOptions;
 };
 
 export type EncodeResult = {
@@ -28,7 +29,7 @@ export type EncodeResult = {
 
 export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeResult {
   const normalized = normalizeForCompression(input);
-  const bits = encodeTokenStream(tokenize(normalized.body), normalized.httpsOmitted);
+  const bits = encodeTokenStream(tokenize(normalized.body, options.tokenizer), normalized.httpsOmitted);
   const allowFragment = Boolean(options.allowFragment);
   const payloadBody = encodeBits(bits, allowFragment ? ASCII_CLIENT_ALPHABET : ASCII_SERVER_ALPHABET);
   const payload = allowFragment ? `${CLIENT_PAYLOAD_PREFIX}${payloadBody}` : payloadBody;

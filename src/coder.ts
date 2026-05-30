@@ -3,6 +3,7 @@ import {
   ASCII_SYMBOL,
   END_SYMBOL,
   EXT_DICT_SYMBOL,
+  EXTENDED_DICTIONARY_BITS,
   LITERAL_ALPHABET,
   MIN_REF_LENGTH,
   NUMBER_SYMBOL,
@@ -29,7 +30,7 @@ export function encodeTokenStream(tokens: Token[], httpsOmitted: boolean): numbe
     }
 
     if (token.type === "dict" && isExtendedDictionaryId(token.id)) {
-      writer.write(extendedDictionaryIndex(token.id), 6);
+      writer.write(extendedDictionaryIndex(token.id), EXTENDED_DICTIONARY_BITS);
       continue;
     }
 
@@ -94,7 +95,7 @@ export function decodeTokenStream(bits: number[]): { httpsOmitted: boolean; body
     }
 
     if (symbol === EXT_DICT_SYMBOL) {
-      const extended = extendedDictionaryValue(reader.read(6));
+      const extended = extendedDictionaryValue(reader.read(EXTENDED_DICTIONARY_BITS));
       if (extended === undefined) throw new Error("Invalid extended dictionary index");
       body += extended;
       continue;

@@ -1,6 +1,7 @@
 import {
   ASCII_SYMBOL,
   DICTIONARY,
+  EXTENDED_DICTIONARY_BITS,
   MAX_NUMBER_LENGTH,
   MAX_REF_LENGTH,
   MAX_REF_OFFSET,
@@ -20,7 +21,32 @@ export type Token =
   | { type: "num"; value: bigint; length: number }
   | { type: "ref"; offset: number; length: number };
 
-export function tokenize(source: string): Token[] {
+export type TokenizeOptions = {
+  useDictionary?: boolean;
+  useNumbers?: boolean;
+  useReferences?: boolean;
+};
+
+const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
+  useDictionary: true,
+  useNumbers: true,
+  useReferences: true,
+};
+
+export function tokenize(source: string, options: TokenizeOptions = {}): Token[] {
+  const resolved = { ...DEFAULT_TOKENIZE_OPTIONS, ...options };
+  const dictionary = resolved.useDictionary ? dictionaryMatches : () => [];
+  const numbers = resolved.useNumbers ? decimalRun : () => undefined;
+  const references = resolved.useReferences ? referencesAt : () => [];
+  return tokenizeWithCandidates(source, dictionary, numbers, references);
+}
+
+function tokenizeWithCandidates(
+  source: string,
+  dictionary: (source: string, position: number) => Token[],
+  numbers: (source: string, position: number) => Token | undefined,
+  references: (source: string, position: number) => Token[],
+): Token[] {
   const bestFrom: Array<{ cost: number; tokens: Token[] }> = Array.from({ length: source.length + 1 }, () => ({
     cost: Number.POSITIVE_INFINITY,
     tokens: [],
@@ -28,7 +54,7 @@ export function tokenize(source: string): Token[] {
   bestFrom[source.length] = { cost: 6, tokens: [] };
 
   for (let position = source.length - 1; position >= 0; position -= 1) {
-    for (const candidate of candidatesAt(source, position)) {
+    for (const candidate of candidatesAt(source, position, dictionary, numbers, references)) {
       const suffix = bestFrom[nextPosition(candidate, position)];
       const cost = tokenCost(candidate) + suffix.cost;
       const previous = bestFrom[position];
@@ -75,29 +101,41 @@ export function materialize(tokens: Token[], seed = ""): string {
 
 export function tokenCost(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) === undefined ? 13 : 6;
-  if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 12 : 6;
+  if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
   if (token.type === "ref") return 24;
 
   return 6 + 6 + decimalBitWidth(token.length);
 }
 
-function candidatesAt(source: string, position: number): Token[] {
+function candidatesAt(
+  source: string,
+  position: number,
+  dictionary: (source: string, position: number) => Token[],
+  numbers: (source: string, position: number) => Token | undefined,
+  references: (source: string, position: number) => Token[],
+): Token[] {
   const char = source[position];
   const candidates: Token[] = [{ type: "lit", value: char }];
 
+  candidates.push(...dictionary(source, position));
+
+  const number = numbers(source, position);
+  if (number) candidates.push(number);
+
+  candidates.push(...references(source, position));
+
+  return candidates;
+}
+
+function dictionaryMatches(source: string, position: number): Token[] {
+  const matches: Token[] = [];
   for (let id = 0; id < DICTIONARY.length; id += 1) {
     const value = DICTIONARY[id];
     if (source.startsWith(value, position)) {
-      candidates.push({ type: "dict", id, value });
+      matches.push({ type: "dict", id, value });
     }
   }
-
-  const number = decimalRun(source, position);
-  if (number) candidates.push(number);
-
-  candidates.push(...referencesAt(source, position));
-
-  return candidates;
+  return matches;
 }
 
 function nextPosition(token: Token, position: number): number {

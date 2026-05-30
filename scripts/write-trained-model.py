@@ -8,10 +8,25 @@ from pathlib import Path
 
 SPECIAL_SYMBOLS = 5  # ascii, number, ref, extended-dict, end
 MAX_SYMBOLS = 64
-MAX_EXTENDED = 64
+MAX_EXTENDED = 128
 DOMAIN_SUFFIXES = {"com", "org", "net", "gov", "edu", "co", "ac", "uk", "au", "jp", "de", "fr", "ca", "us", "mil", "info", "io", "tv", "ie", "nz", "nl", "se", "ru", "it", "in", "br", "cn", "es", "eu", "za"}
 GENERIC_HOST_LABELS = {"www", "m", "mobile", "api", "docs", "news", "books", "maps", "search", "support", "help", "blog", "cdn", "static", "assets", "images", "data", "download", "downloads", "ftp", "mail"}
 GENERIC_MULTI_SEGMENT_WORDS = {"news", "search", "article", "articles", "index.php", "cgi-bin", "books", "archive", "archives", "story", "stories", "content", "view", "page", "pages", "watch", "wiki", "images", "files", "sports", "music", "reviews", "about", "data", "results", "html", "pdf"}
+CURATED_DEMAND_PROXY = [
+    # Human-shared developer/code-hosting URL shapes. These are not broad-crawl winners,
+    # but shortener usage is expected to over-index on them until first-party demand data exists.
+    "github.",
+    "gitlab.",
+    "bitbucket.",
+    "/tree/",
+    "/blob/",
+    "/issues/",
+    "/pull/",
+    "/commit/",
+    "/releases/",
+    "/src/",
+    "/docs/",
+]
 
 CHAR_ROW = re.compile(r"\| `(.+)` \| (\d+) \|")
 DICT_ROW = re.compile(r"\| `(.+)` \| (\d+) \| (\d+) \| (\d+) \|")
@@ -84,6 +99,15 @@ def is_usable_dictionary_entry(entry: str, existing: list[str]) -> bool:
     )
 
 
+def merge_curated_entries(dictionary: list[str]) -> list[str]:
+    out = dictionary[:]
+    insertion = min(16, len(out))
+    for entry in reversed(CURATED_DEMAND_PROXY):
+        if entry not in out:
+            out.insert(insertion, entry)
+    return out
+
+
 def is_over_specific_path_group(entry: str) -> bool:
     if not entry.startswith("/"):
         return False
@@ -134,6 +158,7 @@ def main() -> None:
     markdown = args.analysis.read_text(encoding="utf-8")
     literal_chars = parse_chars(markdown)
     dictionary = parse_dictionary(markdown)
+    dictionary = merge_curated_entries(dictionary)
 
     literal_count = min(args.literal_count, len(literal_chars), MAX_SYMBOLS - SPECIAL_SYMBOLS)
     primary_count = MAX_SYMBOLS - SPECIAL_SYMBOLS - literal_count
@@ -167,8 +192,10 @@ if (SYMBOL_COUNT > 64) {{
   throw new Error(`Model has ${{SYMBOL_COUNT}} symbols; packed MVP supports at most 64`);
 }}
 
-if (EXTENDED_DICTIONARY.length > 64) {{
-  throw new Error("Extended dictionary supports at most 64 entries in the MVP");
+export const EXTENDED_DICTIONARY_BITS = Math.max(1, Math.ceil(Math.log2(Math.max(1, EXTENDED_DICTIONARY.length))));
+
+if (EXTENDED_DICTIONARY.length > 128) {{
+  throw new Error("Extended dictionary supports at most 128 entries in the MVP");
 }}
 
 export const MIN_REF_LENGTH = 4;

@@ -4,6 +4,9 @@ import "./style.css";
 const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
+const useDictionary = getElement<HTMLInputElement>("use-dictionary");
+const useNumbers = getElement<HTMLInputElement>("use-numbers");
+const useReferences = getElement<HTMLInputElement>("use-references");
 const origin = getElement<HTMLInputElement>("origin");
 const stats = getElement<HTMLParagraphElement>("stats");
 const error = getElement<HTMLParagraphElement>("error");
@@ -18,7 +21,7 @@ input.value = "https://x.com/yanorei32/status/2059594850694283362";
 renderCurrentUrlDecode();
 renderEncode();
 
-for (const element of [input, allowFragment, origin]) {
+for (const element of [input, allowFragment, useDictionary, useNumbers, useReferences, origin]) {
   element.addEventListener("input", renderEncode);
   element.addEventListener("change", renderEncode);
 }
@@ -43,6 +46,11 @@ function renderEncode(): void {
     const result = encodeUrl(input.value, {
       allowFragment: allowFragment.checked,
       origin: origin.value,
+      tokenizer: {
+        useDictionary: useDictionary.checked,
+        useNumbers: useNumbers.checked,
+        useReferences: useReferences.checked,
+      },
     });
 
     syncing = true;
@@ -80,10 +88,20 @@ function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
     `normalized: ${result.normalizedUrl}`,
     `carrier: ${result.carrier}`,
     `payload family: ${result.payloadFamily}`,
+    `tokenizer: ${formatTokenizerMode()}`,
     `payload chars: ${result.stats.payloadLength}`,
     `short URL chars: ${result.stats.shortUrlLength}`,
     `ratio vs normalized URL: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`,
   ].join(" | ");
+}
+
+function formatTokenizerMode(): string {
+  const enabled = [
+    useDictionary.checked ? "dict" : undefined,
+    useNumbers.checked ? "num" : undefined,
+    useReferences.checked ? "ref" : undefined,
+  ].filter(Boolean);
+  return enabled.length === 0 ? "literals only" : enabled.join("+");
 }
 
 function renderCurrentUrlDecode(): void {

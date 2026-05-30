@@ -23,6 +23,17 @@ export const EXTENDED_DICTIONARY = [
   ".de/",
   ".ru/",
   "article",
+  "github.",
+  "gitlab.",
+  "bitbucket.",
+  "/tree/",
+  "/blob/",
+  "/issues/",
+  "/pull/",
+  "/commit/",
+  "/releases/",
+  "/src/",
+  "/docs/",
   ".net/",
   "content",
   "detail",
@@ -82,6 +93,58 @@ export const EXTENDED_DICTIONARY = [
   "login",
   "2021",
   ".es/",
+  ".ca/",
+  "2020",
+  "sort=",
+  "/en/",
+  "/04/",
+  "contact",
+  "resources",
+  ".xn--p1ai/",
+  "default",
+  ".ch/",
+  ".ua/",
+  "tags",
+  "action=",
+  ".eu/",
+  "/10/",
+  ".org",
+  "redirect_to=",
+  "projects",
+  ".in/",
+  "?submissionId=",
+  "/03/",
+  "mode=",
+  "/handle/",
+  "lang=",
+  ".co.kr/",
+  "/06/",
+  "uncategorized",
+  "/05/",
+  ".vn/",
+  ".ro/",
+  "/12/",
+  ".at/",
+  ".be/",
+  ".uk/",
+  ".tw/",
+  ".hu/",
+  ".se/",
+  ".co.il/",
+  ".gr/",
+  ".tr/",
+  "/11/",
+  "/01/",
+  "/topic",
+  "obituaries",
+  ".co/",
+  ".online/",
+  ".id/",
+  "comments",
+  "/09/",
+  "privacy-policy",
+  ".io/",
+  ".dk/",
 ] as const;
 
 export const DICTIONARY = [...PRIMARY_DICTIONARY, ...EXTENDED_DICTIONARY] as const;
@@ -97,8 +160,10 @@ if (SYMBOL_COUNT > 64) {
   throw new Error(`Model has ${SYMBOL_COUNT} symbols; packed MVP supports at most 64`);
 }
 
-if (EXTENDED_DICTIONARY.length > 64) {
-  throw new Error("Extended dictionary supports at most 64 entries in the MVP");
+export const EXTENDED_DICTIONARY_BITS = Math.max(1, Math.ceil(Math.log2(Math.max(1, EXTENDED_DICTIONARY.length))));
+
+if (EXTENDED_DICTIONARY.length > 128) {
+  throw new Error("Extended dictionary supports at most 128 entries in the MVP");
 }
 
 export const MIN_REF_LENGTH = 4;
