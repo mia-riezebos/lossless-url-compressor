@@ -74,12 +74,7 @@ function renderDecodeFromOutput(): void {
 }
 
 function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
-  return [
-    `payload: ${result.stats.payloadLength}`,
-    `short URL: ${result.stats.shortUrlLength}`,
-    `ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`,
-    `family: ${result.payloadFamily}`,
-  ].join(" | ");
+  return `compression ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`;
 }
 
 function redirectCurrentUrlDecode(): void {
