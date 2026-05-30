@@ -202,7 +202,7 @@ if (EXTENDED_DICTIONARY.length > 128) {{
   throw new Error("Extended dictionary supports at most 128 entries in the MVP");
 }}
 
-export const MIN_REF_LENGTH = 4;
+export const MIN_REF_LENGTH = 3;
 export const MAX_REF_LENGTH = MIN_REF_LENGTH + 63;
 export const MAX_REF_OFFSET = 4095;
 export const REF_SMALL_OFFSET_BITS = 4;
