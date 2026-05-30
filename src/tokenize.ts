@@ -1,3 +1,4 @@
+import { CJK_ALPHABET } from "./alphabet";
 import {
   ASCII_SYMBOL,
   ASCII_STRUCTURED_LENGTH_BITS,
@@ -28,6 +29,7 @@ import {
   TIME_MINUTE_BITS,
   TIME_SECOND_BITS,
   U64_BITS,
+  UNICODE_CODE_UNIT_BITS,
   decimalBitWidth,
   dictionarySymbol,
   isExtendedDictionaryId,
@@ -42,6 +44,7 @@ export type DateTimeFormat = typeof DATETIME_FORMATS[number];
 
 export type Token =
   | { type: "lit"; value: string }
+  | { type: "cjk"; value: string; length: number }
   | { type: "dict"; id: number; value: string }
   | { type: "num"; value: bigint; length: number }
   | { type: "date"; value: string; format: DateFormat; year: number; month: number; day: number }
@@ -123,7 +126,7 @@ export function materialize(tokens: Token[], seed = ""): string {
       continue;
     }
 
-    if (token.type === "dict") {
+    if (token.type === "dict" || token.type === "cjk") {
       output += token.value;
       continue;
     }
@@ -167,7 +170,8 @@ export function materialize(tokens: Token[], seed = ""): string {
 }
 
 export function tokenCost(token: Token): number {
-  if (token.type === "lit") return literalSymbol(token.value) === undefined ? 13 : 6;
+  if (token.type === "lit") return literalCost(token.value);
+  if (token.type === "cjk") return asciiStructuredHeaderBits() + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
   if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
   if (token.type === "ref") return refCost(token.offset, token.length);
   if (token.type === "date") return 6 + datePayloadBits();
@@ -205,12 +209,22 @@ function dictionaryAndStructuredMatches(source: string, position: number): Token
 
 function structuredTextMatches(source: string, position: number): Token[] {
   return [
+    ...cjkRun(source, position),
     ...uuidMatch(source, position),
     ...percentEncodedRun(source, position),
     ...hexRun(source, position),
     ...base64UrlRun(source, position),
     ...lowerHyphenRun(source, position),
   ];
+}
+
+function cjkRun(source: string, position: number): Token[] {
+  let length = 0;
+  while (position + length < source.length && CJK_ALPHABET.includes(source[position + length])) {
+    length += 1;
+  }
+
+  return length >= 3 ? [{ type: "cjk", value: source.slice(position, position + length), length }] : [];
 }
 
 function uuidMatch(source: string, position: number): Token[] {
@@ -273,6 +287,11 @@ function asciiStructuredHeaderBits(): number {
   return 6 + 7 + ASCII_STRUCTURED_LENGTH_BITS;
 }
 
+function literalCost(value: string): number {
+  if (literalSymbol(value) !== undefined) return 6;
+  return value.charCodeAt(0) <= 0x7f ? 13 : 13 + UNICODE_CODE_UNIT_BITS;
+}
+
 function dictionaryMatches(source: string, position: number): Token[] {
   const matches: Token[] = [];
   for (let id = 0; id < DICTIONARY.length; id += 1) {
@@ -286,6 +305,7 @@ function dictionaryMatches(source: string, position: number): Token[] {
 
 function nextPosition(token: Token, position: number): number {
   if (token.type === "lit") return position + token.value.length;
+  if (token.type === "cjk") return position + token.value.length;
   if (token.type === "dict") return position + token.value.length;
   if (
     token.type === "date" ||
@@ -472,6 +492,7 @@ function referencesAt(source: string, position: number): Token[] {
 
 export function tokenSymbol(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) ?? ASCII_SYMBOL;
+  if (token.type === "cjk") return ASCII_SYMBOL;
   if (token.type === "dict") return dictionarySymbol(token.id);
   if (token.type === "num" || token.type === "date" || token.type === "datetime" || token.type === "u64") return NUMBER_SYMBOL;
   if (

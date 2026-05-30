@@ -43,6 +43,14 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encodeURIComponent(encoded.payload))).toBe(source);
   });
 
+  it("compresses URLs that already contain CJK payload characters", () => {
+    const source = "https://github.com/mia-riezebos/berrycamp.github.io/tree/dev/wplace-templates/quantized/rooms";
+    const compressed = encodeUrl(source, { origin: "https://piss.zip", useCjkPayload: true }).shortUrl;
+    const encodedAgain = encodeUrl(compressed, { useCjkPayload: true });
+
+    expect(decodeUrlPayload(encodedAgain.payload)).toBe(compressed);
+  });
+
   it("compresses corpus-shaped URLs below the normalized source length even with the short origin", () => {
     const source = "http://www.web.archive.org/web/20120101010101/http://www.google.com/search?q=wikipedia";
     const encoded = encodeUrl(source);
@@ -162,7 +170,10 @@ describe("MVP ASCII-safe codec", () => {
     expect(encodeUrl(source).payload).toBe(encodeUrl(source).payload);
   });
 
-  it("rejects non-ASCII input in the MVP", () => {
-    expect(() => encodeUrl("https://example.com/雪")).toThrow("non-ASCII");
+  it("roundtrips non-ASCII input URLs", () => {
+    const source = "https://example.com/雪";
+    const encoded = encodeUrl(source, { useCjkPayload: true });
+
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
   });
 });

@@ -29,7 +29,7 @@ export function normalizeForCompression(input: string): NormalizedUrl {
   const suffix = input.slice(authorityEnd);
   const normalizedUrl = `${scheme}://${normalizedAuthority}${suffix}`;
 
-  assertAscii(normalizedUrl);
+  assertSupportedCharacters(normalizedUrl);
 
   return scheme === "https"
     ? { normalizedUrl, body: `${normalizedAuthority}${suffix}`, scheme, httpsOmitted: true }
@@ -68,12 +68,9 @@ function findPortStart(hostPort: string): number {
   return /^\d+$/.test(hostPort.slice(colonIndex + 1)) ? colonIndex : -1;
 }
 
-function assertAscii(value: string): void {
-  for (const char of value) {
-    const code = char.charCodeAt(0);
-    if (code > 0x7f) {
-      throw new Error("MVP ASCII-safe codec does not support non-ASCII input yet");
-    }
+function assertSupportedCharacters(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
     if (code < 0x20 || code === 0x7f) {
       throw new Error("Input URL must not contain ASCII control characters");
     }

@@ -1,11 +1,14 @@
+import { CJK_ALPHABET } from "./alphabet";
 import { BitReader, BitWriter } from "./bitstream";
 import {
   ASCII_BASE64URL_CODE,
+  ASCII_CJK_CODE,
   ASCII_HEX_CODE,
   ASCII_LOWER_HYPHEN_CODE,
   ASCII_PERCENT_CODE,
   ASCII_STRUCTURED_LENGTH_BITS,
   ASCII_SYMBOL,
+  ASCII_UNICODE_CODE,
   ASCII_UUID_CODE,
   BASE64URL_ALPHABET,
   DATE_DAY_BITS,
@@ -37,6 +40,7 @@ import {
   TIME_MINUTE_BITS,
   TIME_SECOND_BITS,
   U64_BITS,
+  UNICODE_CODE_UNIT_BITS,
   decimalBitWidth,
   extendedDictionaryIndex,
   extendedDictionaryValue,
@@ -52,6 +56,11 @@ export function encodeTokenStream(tokens: Token[], httpsOmitted: boolean): numbe
 
   for (const token of tokens) {
     writer.write(tokenSymbol(token), 6);
+
+    if (token.type === "cjk") {
+      writeAlphabetRun(writer, ASCII_CJK_CODE, token.value, CJK_ALPHABET);
+      continue;
+    }
 
     if (token.type === "hex") {
       writeHex(writer, token.value, token.uppercase);
@@ -79,7 +88,7 @@ export function encodeTokenStream(tokens: Token[], httpsOmitted: boolean): numbe
     }
 
     if (token.type === "lit" && literalSymbol(token.value) === undefined) {
-      writer.write(token.value.charCodeAt(0), 7);
+      writeLiteralEscape(writer, token.value);
       continue;
     }
 
@@ -177,6 +186,17 @@ export function decodeTokenStream(bits: number[]): { httpsOmitted: boolean; body
   throw new Error("Missing end token");
 }
 
+function writeLiteralEscape(writer: BitWriter, value: string): void {
+  const code = value.charCodeAt(0);
+  if (code <= 0x7f) {
+    writer.write(code, 7);
+    return;
+  }
+
+  writer.write(ASCII_UNICODE_CODE, 7);
+  writer.write(code, UNICODE_CODE_UNIT_BITS);
+}
+
 function writeReference(writer: BitWriter, offset: number, length: number): void {
   const encodedLength = length - MIN_REF_LENGTH;
 
@@ -271,6 +291,8 @@ function readAsciiEscaped(reader: BitReader): string {
   if (code === ASCII_PERCENT_CODE) return readPercentRun(reader);
   if (code === ASCII_BASE64URL_CODE) return readAlphabetRun(reader, BASE64URL_ALPHABET);
   if (code === ASCII_LOWER_HYPHEN_CODE) return readAlphabetRun(reader, LOWER_HYPHEN_ALPHABET);
+  if (code === ASCII_CJK_CODE) return readAlphabetRun(reader, CJK_ALPHABET);
+  if (code === ASCII_UNICODE_CODE) return String.fromCharCode(reader.read(UNICODE_CODE_UNIT_BITS));
 
   return String.fromCharCode(code);
 }

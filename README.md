@@ -27,7 +27,7 @@ Start with [`SPEC.md`](./SPEC.md).
 
 - TypeScript codec in `src/codec.ts`.
 - Manual scheme/host normalization in `src/normalize.ts`; no `URL` parser.
-- ASCII-safe payloads by default; optional CJK Unicode output for fewer visible payload chars.
+- Unicode input URLs are supported; payloads are ASCII-safe by default with optional CJK Unicode output for fewer visible chars.
 - Optional leading `#` payload when fragment/client-max mode is enabled.
 - Hono Worker in `src/worker.ts` redirects server-visible payloads directly to the decoded URL.
 - Trained compression pipeline:
