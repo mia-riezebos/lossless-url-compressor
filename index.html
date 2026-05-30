@@ -8,20 +8,20 @@
   <body>
     <main>
       <h1>Lossless URL Compressor</h1>
+      <p>Compresses URLs with a trained URL dictionary, numeric/date packing, and repeated-text references. Decoding is stateless and redirects directly to the original URL.</p>
 
       <label>
         Input URL
         <textarea id="input" rows="4" spellcheck="false" placeholder="https://x.com/yanorei32/status/2059594850694283362"></textarea>
       </label>
 
-      <fieldset>
-        <legend>Options</legend>
+      <div class="options">
         <label><input id="allow-fragment" type="checkbox" /> Fragment</label>
         <label><input id="use-cjk-payload" type="checkbox" /> CJK</label>
-      </fieldset>
+      </div>
 
       <label>
-        Short URL
+        Compressed URL
         <textarea id="output" rows="4" spellcheck="false"></textarea>
       </label>
 

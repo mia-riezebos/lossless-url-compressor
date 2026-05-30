@@ -27,9 +27,20 @@ textarea {
   font: 1rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-fieldset,
 label {
   margin-top: 1rem;
+}
+
+.options {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.options label {
+  display: inline;
+  width: auto;
+  margin-top: 0;
 }
 
 #error {
