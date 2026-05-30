@@ -34,6 +34,10 @@ export const EXTENDED_DICTIONARY = [
   "/releases/",
   "/src/",
   "/docs/",
+  "x.com/",
+  "twitter.com/",
+  "/status/",
+  "/statuses/",
   ".net/",
   "content",
   "detail",
@@ -142,9 +146,6 @@ export const EXTENDED_DICTIONARY = [
   ".id/",
   "comments",
   "/09/",
-  "privacy-policy",
-  ".io/",
-  ".dk/",
 ] as const;
 
 export const DICTIONARY = [...PRIMARY_DICTIONARY, ...EXTENDED_DICTIONARY] as const;
@@ -171,6 +172,21 @@ export const MAX_REF_LENGTH = MIN_REF_LENGTH + 63;
 export const MAX_REF_OFFSET = 4095;
 export const MIN_NUMBER_LENGTH = 4;
 export const MAX_NUMBER_LENGTH = 64;
+
+export const NUMBER_DATE_CODE = 0;
+export const NUMBER_DATETIME_CODE = 1;
+export const NUMBER_U64_CODE = 2;
+export const DATE_FORMAT_BITS = 2;
+export const DATETIME_FORMAT_BITS = 2;
+export const DATE_YEAR_BASE = 1970;
+export const DATE_YEAR_BITS = 8;
+export const DATE_MONTH_BITS = 4;
+export const DATE_DAY_BITS = 5;
+export const TIME_HOUR_BITS = 5;
+export const TIME_MINUTE_BITS = 6;
+export const TIME_SECOND_BITS = 6;
+export const TIME_MILLISECOND_BITS = 10;
+export const U64_BITS = 64;
 
 export function literalSymbol(char: string): number | undefined {
   const index = LITERAL_ALPHABET.indexOf(char);

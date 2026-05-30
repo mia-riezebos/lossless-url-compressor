@@ -66,6 +66,31 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encoded.payload)).toBe(source);
   });
 
+  it("packs date slugs as numeric structure", () => {
+    const source = "https://example.com/blog/2026/05/28/how-to-build-things";
+    const encoded = encodeUrl(source);
+    const withoutNumberTokens = encodeUrl(source, { tokenizer: { useNumbers: false } });
+
+    expect(encoded.stats.payloadLength).toBeLessThan(withoutNumberTokens.stats.payloadLength);
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
+  });
+
+  it("packs ISO datetime slugs as numeric structure", () => {
+    const source = "https://example.com/events/2026-05-28T03:14:15.123Z/details";
+    const encoded = encodeUrl(source);
+    const withoutNumberTokens = encodeUrl(source, { tokenizer: { useNumbers: false } });
+
+    expect(encoded.stats.payloadLength).toBeLessThan(withoutNumberTokens.stats.payloadLength);
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
+  });
+
+  it("packs fixed-width u64-sized ids when they beat generic decimals", () => {
+    const source = "https://example.com/status/18446744073709551615";
+    const encoded = encodeUrl(source);
+
+    expect(decodeUrlPayload(encoded.payload)).toBe(source);
+  });
+
   it("keeps # out of server-safe payloads", () => {
     const encoded = encodeUrl("https://example.com/a#frag", { allowFragment: false });
 
