@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lossless-url-compressor",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-05-28",
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist"
+  }
+}

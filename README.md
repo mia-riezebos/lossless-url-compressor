@@ -9,9 +9,15 @@ pnpm install
 pnpm dev
 pnpm test
 pnpm build
+pnpm worker:dev
 ```
 
-Open the Vite dev URL and use the raw HTML input/settings/output UI.
+Open the Vite dev URL for UI iteration, or `worker:dev` to test the Hono/Workers redirect path.
+Deploy with:
+
+```sh
+pnpm deploy
+```
 
 ## Spec
 
@@ -21,8 +27,9 @@ Start with [`SPEC.md`](./SPEC.md).
 
 - TypeScript codec in `src/codec.ts`.
 - Manual scheme/host normalization in `src/normalize.ts`; no `URL` parser.
-- ASCII-safe payloads only; no raw `%`, no non-ASCII output.
+- ASCII-safe payloads by default; optional CJK Unicode output for fewer visible payload chars.
 - Optional leading `#` payload when fragment/client-max mode is enabled.
+- Hono Worker in `src/worker.ts` redirects server-visible payloads directly to the decoded URL.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
   - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, numeric runs, and LZ refs

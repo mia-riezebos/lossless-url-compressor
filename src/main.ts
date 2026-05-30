@@ -5,24 +5,17 @@ const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
 const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
-const useDictionary = getElement<HTMLInputElement>("use-dictionary");
-const useNumbers = getElement<HTMLInputElement>("use-numbers");
-const useReferences = getElement<HTMLInputElement>("use-references");
-const origin = getElement<HTMLInputElement>("origin");
 const stats = getElement<HTMLParagraphElement>("stats");
 const error = getElement<HTMLParagraphElement>("error");
-const decodedSection = getElement<HTMLElement>("decoded-section");
-const decoded = getElement<HTMLParagraphElement>("decoded");
-const openDecoded = getElement<HTMLAnchorElement>("open-decoded");
 
 let syncing = false;
 
 input.value = "https://x.com/yanorei32/status/2059594850694283362";
 
-renderCurrentUrlDecode();
+redirectCurrentUrlDecode();
 renderEncode();
 
-for (const element of [input, allowFragment, useCjkPayload, useDictionary, useNumbers, useReferences, origin]) {
+for (const element of [input, allowFragment, useCjkPayload]) {
   element.addEventListener("input", renderEncode);
   element.addEventListener("change", renderEncode);
 }
@@ -46,13 +39,8 @@ function renderEncode(): void {
 
     const result = encodeUrl(input.value, {
       allowFragment: allowFragment.checked,
-      origin: origin.value,
+      origin: window.location.origin,
       useCjkPayload: useCjkPayload.checked,
-      tokenizer: {
-        useDictionary: useDictionary.checked,
-        useNumbers: useNumbers.checked,
-        useReferences: useReferences.checked,
-      },
     });
 
     syncing = true;
@@ -87,42 +75,22 @@ function renderDecodeFromOutput(): void {
 
 function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
   return [
-    `normalized: ${result.normalizedUrl}`,
-    `carrier: ${result.carrier}`,
-    `payload family: ${result.payloadFamily}`,
-    `tokenizer: ${formatTokenizerMode()}`,
-    `payload chars: ${result.stats.payloadLength}`,
-    `short URL chars: ${result.stats.shortUrlLength}`,
-    `ratio vs normalized URL: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`,
+    `payload: ${result.stats.payloadLength}`,
+    `short URL: ${result.stats.shortUrlLength}`,
+    `ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`,
+    `family: ${result.payloadFamily}`,
   ].join(" | ");
 }
 
-function formatTokenizerMode(): string {
-  const enabled = [
-    useDictionary.checked ? "dict" : undefined,
-    useNumbers.checked ? "num" : undefined,
-    useReferences.checked ? "ref" : undefined,
-  ].filter(Boolean);
-  return enabled.length === 0 ? "literals only" : enabled.join("+");
-}
-
-function renderCurrentUrlDecode(): void {
-  const href = window.location.href;
-  const marker = `/${VERSION}/`;
-
-  if (!href.includes(marker)) return;
+function redirectCurrentUrlDecode(): void {
+  if (!window.location.href.includes(`/${VERSION}/`)) return;
 
   try {
-    const payload = extractPayloadSurface(href);
-    const url = decodeUrlPayload(payload);
-
-    decoded.textContent = url;
-    openDecoded.href = url;
-    decodedSection.hidden = false;
+    const payload = extractPayloadSurface(window.location.href);
+    if (!payload) return;
+    window.location.replace(decodeUrlPayload(payload));
   } catch (caught) {
-    decoded.textContent = caught instanceof Error ? caught.message : String(caught);
-    openDecoded.removeAttribute("href");
-    decodedSection.hidden = false;
+    error.textContent = caught instanceof Error ? caught.message : String(caught);
   }
 }
 

@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Lossless URL Compressor POC</title>
+    <title>Lossless URL Compressor</title>
   </head>
   <body>
     <main>
-      <h1>Lossless URL Compressor POC</h1>
+      <h1>Lossless URL Compressor</h1>
 
       <label>
         Input URL
@@ -15,46 +15,18 @@
       </label>
 
       <fieldset>
-        <legend>Settings</legend>
-        <label>
-          <input id="allow-fragment" type="checkbox" />
-          allow fragment payload (#): shorter sometimes, client-side decode only
-        </label>
-        <label>
-          <input id="use-cjk-payload" type="checkbox" />
-          CJK Unicode payload: fewer visible chars, percent-encoded over the wire
-        </label>
-        <label>
-          <input id="use-dictionary" type="checkbox" checked />
-          dictionary/tokenizer patterns
-        </label>
-        <label>
-          <input id="use-numbers" type="checkbox" checked />
-          numeric-run token
-        </label>
-        <label>
-          <input id="use-references" type="checkbox" checked />
-          LZ/back-reference token
-        </label>
-        <label>
-          Short origin
-          <input id="origin" type="text" value="https://l.mia.cx" spellcheck="false" />
-        </label>
+        <legend>Options</legend>
+        <label><input id="allow-fragment" type="checkbox" /> Fragment</label>
+        <label><input id="use-cjk-payload" type="checkbox" /> CJK</label>
       </fieldset>
 
       <label>
-        Output short URL / decode input
+        Short URL
         <textarea id="output" rows="4" spellcheck="false"></textarea>
       </label>
 
       <p id="stats"></p>
       <p id="error" role="alert"></p>
-
-      <section id="decoded-section" hidden>
-        <h2>Decoded from current URL</h2>
-        <p id="decoded"></p>
-        <p><a id="open-decoded" href="#">open decoded URL</a></p>
-      </section>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

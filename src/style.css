@@ -5,31 +5,30 @@
 }
 
 body {
+  min-height: 100vh;
   margin: 0;
-  padding: 2rem;
+  display: grid;
+  place-items: center;
 }
 
 main {
-  max-width: 760px;
+  width: min(42rem, calc(100vw - 2rem));
 }
 
 label,
-textarea,
-input[type="text"] {
+textarea {
   display: block;
   width: 100%;
 }
 
-textarea,
-input[type="text"] {
+textarea {
   box-sizing: border-box;
   margin-top: 0.35rem;
   font: 1rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 fieldset,
-label,
-section {
+label {
   margin-top: 1rem;
 }
 
@@ -38,7 +37,6 @@ section {
   white-space: pre-wrap;
 }
 
-#stats,
-#decoded {
+#stats {
   overflow-wrap: anywhere;
 }
