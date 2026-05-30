@@ -6,5 +6,12 @@
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist"
-  }
+  },
+  "routes": [
+    {
+      "zone_name": "piss.zip",
+      "custom_domain": true,
+      "pattern": "piss.zip"
+    }
+  ]
 }
