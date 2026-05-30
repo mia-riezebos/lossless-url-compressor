@@ -10,7 +10,7 @@ const error = getElement<HTMLParagraphElement>("error");
 
 let syncing = false;
 
-input.value = "https://x.com/yanorei32/status/2059594850694283362";
+input.value = "https://youtube.com/watch?v=dQw4w9WgXcQ";
 
 redirectCurrentUrlDecode();
 renderEncode();
