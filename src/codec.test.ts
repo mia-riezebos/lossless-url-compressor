@@ -25,6 +25,24 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encoded.payload)).toBe(source);
   });
 
+  it("can emit and decode shorter visible CJK Unicode payloads", () => {
+    const source = "https://github.com/mia-riezebos/berrycamp.github.io/tree/dev/wplace-templates/quantized/rooms";
+    const ascii = encodeUrl(source, { origin: "https://piss.zip" });
+    const cjk = encodeUrl(source, { origin: "https://piss.zip", useCjkPayload: true });
+
+    expect(cjk.payloadFamily).toBe("unicode-cjk");
+    expect(cjk.stats.payloadLength).toBeLessThan(ascii.stats.payloadLength);
+    expect(cjk.stats.shortUrlLength).toBeLessThan(ascii.stats.shortUrlLength);
+    expect(decodeUrlPayload(cjk.payload)).toBe(source);
+  });
+
+  it("decodes percent-encoded CJK payload surfaces", () => {
+    const source = "https://example.com/blog/2026/05/28/how-to-build-things";
+    const encoded = encodeUrl(source, { useCjkPayload: true });
+
+    expect(decodeUrlPayload(encodeURIComponent(encoded.payload))).toBe(source);
+  });
+
   it("compresses corpus-shaped URLs below the normalized source length even with the short origin", () => {
     const source = "http://www.web.archive.org/web/20120101010101/http://www.google.com/search?q=wikipedia";
     const encoded = encodeUrl(source);

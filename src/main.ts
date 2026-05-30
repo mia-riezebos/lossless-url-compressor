@@ -4,6 +4,7 @@ import "./style.css";
 const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
+const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
 const useDictionary = getElement<HTMLInputElement>("use-dictionary");
 const useNumbers = getElement<HTMLInputElement>("use-numbers");
 const useReferences = getElement<HTMLInputElement>("use-references");
@@ -21,7 +22,7 @@ input.value = "https://x.com/yanorei32/status/2059594850694283362";
 renderCurrentUrlDecode();
 renderEncode();
 
-for (const element of [input, allowFragment, useDictionary, useNumbers, useReferences, origin]) {
+for (const element of [input, allowFragment, useCjkPayload, useDictionary, useNumbers, useReferences, origin]) {
   element.addEventListener("input", renderEncode);
   element.addEventListener("change", renderEncode);
 }
@@ -46,6 +47,7 @@ function renderEncode(): void {
     const result = encodeUrl(input.value, {
       allowFragment: allowFragment.checked,
       origin: origin.value,
+      useCjkPayload: useCjkPayload.checked,
       tokenizer: {
         useDictionary: useDictionary.checked,
         useNumbers: useNumbers.checked,
