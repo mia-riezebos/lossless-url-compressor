@@ -32,6 +32,9 @@ import {
   TIME_SECOND_BITS,
   U64_BITS,
   UNICODE_CODE_UNIT_BITS,
+  YOUTUBE_VIDEO_ID_LENGTH,
+  YOUTUBE_VIDEO_PREFIX_BITS,
+  YOUTUBE_VIDEO_PREFIXES,
   decimalBitWidth,
   dictionarySymbol,
   isExtendedDictionaryId,
@@ -49,6 +52,7 @@ export type Token =
   | { type: "cjk"; value: string; length: number }
   | { type: "dict"; id: number; value: string }
   | { type: "share"; id: number; value: string }
+  | { type: "youtube"; variant: number; id: string; value: string }
   | { type: "num"; value: bigint; length: number }
   | { type: "date"; value: string; format: DateFormat; year: number; month: number; day: number }
   | {
@@ -76,6 +80,7 @@ export type TokenizeOptions = {
   useNumbers?: boolean;
   useReferences?: boolean;
   useShareDictionary?: boolean;
+  useRoutes?: boolean;
 };
 
 const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
@@ -83,6 +88,7 @@ const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
   useNumbers: true,
   useReferences: true,
   useShareDictionary: true,
+  useRoutes: true,
 };
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -90,7 +96,7 @@ const MAX_U64 = (1n << 64n) - 1n;
 export function tokenize(source: string, options: TokenizeOptions = {}): Token[] {
   const resolved = { ...DEFAULT_TOKENIZE_OPTIONS, ...options };
   const dictionary = resolved.useDictionary
-    ? (source: string, position: number) => dictionaryAndStructuredMatches(source, position, resolved.useShareDictionary)
+    ? (source: string, position: number) => dictionaryAndStructuredMatches(source, position, resolved.useShareDictionary, resolved.useRoutes)
     : () => [];
   const numbers = resolved.useNumbers ? numericMatches : () => [];
   const references = resolved.useReferences ? referencesAt : () => [];
@@ -133,7 +139,7 @@ export function materialize(tokens: Token[], seed = ""): string {
       continue;
     }
 
-    if (token.type === "dict" || token.type === "share" || token.type === "cjk") {
+    if (token.type === "dict" || token.type === "share" || token.type === "youtube" || token.type === "cjk") {
       output += token.value;
       continue;
     }
@@ -181,6 +187,7 @@ export function tokenCost(token: Token): number {
   if (token.type === "cjk") return asciiStructuredHeaderBits() + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
   if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
   if (token.type === "share") return asciiStructuredHeaderBits() + SHARE_DICTIONARY_BITS;
+  if (token.type === "youtube") return 6 + 7 + YOUTUBE_VIDEO_PREFIX_BITS + YOUTUBE_VIDEO_ID_LENGTH * 6;
   if (token.type === "ref") return refCost(token.offset, token.length);
   if (token.type === "date") return 6 + datePayloadBits();
   if (token.type === "datetime") return 6 + dateTimePayloadBits(token.format === "iso-ms-z");
@@ -211,12 +218,33 @@ function candidatesAt(
   return candidates;
 }
 
-function dictionaryAndStructuredMatches(source: string, position: number, useShareDictionary: boolean): Token[] {
+function dictionaryAndStructuredMatches(source: string, position: number, useShareDictionary: boolean, useRoutes: boolean): Token[] {
   return [
     ...dictionaryMatches(source, position),
+    ...(useRoutes ? routeMatches(source, position) : []),
     ...(useShareDictionary ? shareDictionaryMatches(source, position) : []),
     ...structuredTextMatches(source, position),
   ];
+}
+
+function routeMatches(source: string, position: number): Token[] {
+  return youtubeVideoMatches(source, position);
+}
+
+function youtubeVideoMatches(source: string, position: number): Token[] {
+  const matches: Token[] = [];
+
+  for (let variant = 0; variant < YOUTUBE_VIDEO_PREFIXES.length; variant += 1) {
+    const prefix = YOUTUBE_VIDEO_PREFIXES[variant];
+    const idStart = position + prefix.length;
+    const id = source.slice(idStart, idStart + YOUTUBE_VIDEO_ID_LENGTH);
+
+    if (!source.startsWith(prefix, position) || !isBase64UrlText(id, YOUTUBE_VIDEO_ID_LENGTH)) continue;
+
+    matches.push({ type: "youtube", variant, id, value: `${prefix}${id}` });
+  }
+
+  return matches;
 }
 
 function shareDictionaryMatches(source: string, position: number): Token[] {
@@ -290,6 +318,10 @@ function base64UrlRun(source: string, position: number): Token[] {
   return match ? [{ type: "base64url", value: match[0], length: match[0].length }] : [];
 }
 
+function isBase64UrlText(value: string, length: number): boolean {
+  return value.length === length && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
 function lowerHyphenRun(source: string, position: number): Token[] {
   const match = /^[a-z-]{12,64}/.exec(source.slice(position, position + 64));
   return match ? [{ type: "lower-hyphen", value: match[0], length: match[0].length }] : [];
@@ -331,6 +363,7 @@ function nextPosition(token: Token, position: number): number {
   if (token.type === "cjk") return position + token.value.length;
   if (token.type === "dict") return position + token.value.length;
   if (token.type === "share") return position + token.value.length;
+  if (token.type === "youtube") return position + token.value.length;
   if (
     token.type === "date" ||
     token.type === "datetime" ||
@@ -518,7 +551,7 @@ export function tokenSymbol(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) ?? ASCII_SYMBOL;
   if (token.type === "cjk") return ASCII_SYMBOL;
   if (token.type === "dict") return dictionarySymbol(token.id);
-  if (token.type === "share") return ASCII_SYMBOL;
+  if (token.type === "share" || token.type === "youtube") return ASCII_SYMBOL;
   if (token.type === "num" || token.type === "date" || token.type === "datetime" || token.type === "u64") return NUMBER_SYMBOL;
   if (
     token.type === "hex" ||

@@ -146,7 +146,7 @@ describe("MVP ASCII-safe codec", () => {
 
     for (const source of sources) {
       const encoded = encodeUrl(source, { useCjkPayload: true });
-      const withoutShareDictionary = encodeUrl(source, { tokenizer: { useShareDictionary: false }, useCjkPayload: true });
+      const withoutShareDictionary = encodeUrl(source, { tokenizer: { useRoutes: false, useShareDictionary: false }, useCjkPayload: true });
 
       expect(encoded.stats.payloadLength).toBeLessThan(withoutShareDictionary.stats.payloadLength);
       expect(decodeUrlPayload(encoded.payload)).toBe(source);

@@ -289,9 +289,18 @@ export const ASCII_LOWER_HYPHEN_CODE = 4;
 export const ASCII_CJK_CODE = 5;
 export const ASCII_UNICODE_CODE = 6;
 export const ASCII_SHARE_DICTIONARY_CODE = 7;
+export const ASCII_YOUTUBE_VIDEO_CODE = 8;
 export const ASCII_STRUCTURED_LENGTH_BITS = 6;
 export const UNICODE_CODE_UNIT_BITS = 16;
 export const SHARE_DICTIONARY_BITS = Math.max(1, Math.ceil(Math.log2(Math.max(1, SHARE_DICTIONARY.length))));
+export const YOUTUBE_VIDEO_ID_LENGTH = 11;
+export const YOUTUBE_VIDEO_PREFIXES = [
+  "youtube.com/watch?v=",
+  "youtu.be/",
+  "m.youtube.com/watch?v=",
+  "music.youtube.com/watch?v=",
+] as const;
+export const YOUTUBE_VIDEO_PREFIX_BITS = Math.ceil(Math.log2(YOUTUBE_VIDEO_PREFIXES.length));
 export const HEX_ALPHABET = "0123456789abcdef";
 export const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 export const LOWER_HYPHEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz-";
@@ -325,6 +334,10 @@ export function isExtendedDictionaryId(id: number): boolean {
 
 export function shareDictionaryValue(index: number): string | undefined {
   return SHARE_DICTIONARY[index];
+}
+
+export function youtubeVideoPrefix(index: number): string | undefined {
+  return YOUTUBE_VIDEO_PREFIXES[index];
 }
 
 export function decimalBitWidth(length: number): number {

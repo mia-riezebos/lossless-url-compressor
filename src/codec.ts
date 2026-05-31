@@ -36,7 +36,10 @@ export type EncodeResult = {
 export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeResult {
   const normalized = normalizeForCompression(input);
   const version = options.version ?? VERSION;
-  const tokens = tokenize(normalized.body, version === "0" ? { ...options.tokenizer, useShareDictionary: false } : options.tokenizer);
+  const tokens = tokenize(
+    normalized.body,
+    version === "0" ? { ...options.tokenizer, useRoutes: false, useShareDictionary: false } : options.tokenizer,
+  );
   const bits = encodeBitsForVersion(tokens, normalized.httpsOmitted, version);
   const allowFragment = Boolean(options.allowFragment);
   const origin = trimTrailingSlashes(options.origin ?? DEFAULT_ORIGIN);

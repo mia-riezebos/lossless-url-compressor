@@ -11,6 +11,7 @@ import {
   ASCII_SYMBOL,
   ASCII_UNICODE_CODE,
   ASCII_UUID_CODE,
+  ASCII_YOUTUBE_VIDEO_CODE,
   BASE64URL_ALPHABET,
   DATE_DAY_BITS,
   DATE_FORMAT_BITS,
@@ -44,6 +45,8 @@ import {
   TIME_SECOND_BITS,
   U64_BITS,
   UNICODE_CODE_UNIT_BITS,
+  YOUTUBE_VIDEO_ID_LENGTH,
+  YOUTUBE_VIDEO_PREFIX_BITS,
   decimalBitWidth,
   extendedDictionaryIndex,
   extendedDictionaryValue,
@@ -51,6 +54,7 @@ import {
   literalSymbol,
   primaryDictionaryValue,
   shareDictionaryValue,
+  youtubeVideoPrefix,
 } from "./model";
 import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, type Token, tokenSymbol } from "./tokenize";
 
@@ -102,6 +106,13 @@ function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, rank
     if (token.type === "share") {
       writer.write(ASCII_SHARE_DICTIONARY_CODE, 7);
       writer.write(token.id, SHARE_DICTIONARY_BITS);
+      continue;
+    }
+
+    if (token.type === "youtube") {
+      writer.write(ASCII_YOUTUBE_VIDEO_CODE, 7);
+      writer.write(token.variant, YOUTUBE_VIDEO_PREFIX_BITS);
+      writeAlphabetText(writer, token.id, BASE64URL_ALPHABET);
       continue;
     }
 
@@ -354,6 +365,11 @@ function writeAlphabetRun(writer: BitWriter, code: number, value: string, alphab
   writer.write(value.length - 1, ASCII_STRUCTURED_LENGTH_BITS);
 
   const width = Math.ceil(Math.log2(alphabet.length));
+  writeAlphabetText(writer, value, alphabet);
+}
+
+function writeAlphabetText(writer: BitWriter, value: string, alphabet: string): void {
+  const width = Math.ceil(Math.log2(alphabet.length));
   for (const char of value) {
     const index = alphabet.indexOf(char);
     if (index === -1) throw new Error(`Character ${char} is not in structured alphabet`);
@@ -379,6 +395,7 @@ function readAsciiEscaped(reader: BitReader): string {
   if (code === ASCII_LOWER_HYPHEN_CODE) return readAlphabetRun(reader, LOWER_HYPHEN_ALPHABET);
   if (code === ASCII_CJK_CODE) return readAlphabetRun(reader, CJK_ALPHABET);
   if (code === ASCII_UNICODE_CODE) return String.fromCharCode(reader.read(UNICODE_CODE_UNIT_BITS));
+  if (code === ASCII_YOUTUBE_VIDEO_CODE) return readYoutubeVideo(reader);
   if (code === ASCII_SHARE_DICTIONARY_CODE) {
     const shared = shareDictionaryValue(reader.read(SHARE_DICTIONARY_BITS));
     if (shared === undefined) throw new Error("Invalid share dictionary index");
@@ -412,8 +429,21 @@ function readPercentRun(reader: BitReader): string {
   return output;
 }
 
+function readYoutubeVideo(reader: BitReader): string {
+  const prefix = youtubeVideoPrefix(reader.read(YOUTUBE_VIDEO_PREFIX_BITS));
+  if (prefix === undefined) throw new Error("Invalid YouTube route prefix");
+  return `${prefix}${readAlphabetText(reader, YOUTUBE_VIDEO_ID_LENGTH, BASE64URL_ALPHABET)}`;
+}
+
 function readAlphabetRun(reader: BitReader, alphabet: string): string {
   const length = reader.read(ASCII_STRUCTURED_LENGTH_BITS) + 1;
+  const width = Math.ceil(Math.log2(alphabet.length));
+  let output = "";
+
+  return readAlphabetText(reader, length, alphabet);
+}
+
+function readAlphabetText(reader: BitReader, length: number, alphabet: string): string {
   const width = Math.ceil(Math.log2(alphabet.length));
   let output = "";
 
