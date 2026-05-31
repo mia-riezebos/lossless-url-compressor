@@ -13,6 +13,8 @@ import {
   EXTENDED_DICTIONARY_BITS,
   HEX_ALPHABET,
   LOWER_HYPHEN_ALPHABET,
+  SHARE_DICTIONARY,
+  SHARE_DICTIONARY_BITS,
   MAX_NUMBER_LENGTH,
   MAX_REF_LENGTH,
   MAX_REF_OFFSET,
@@ -46,6 +48,7 @@ export type Token =
   | { type: "lit"; value: string }
   | { type: "cjk"; value: string; length: number }
   | { type: "dict"; id: number; value: string }
+  | { type: "share"; id: number; value: string }
   | { type: "num"; value: bigint; length: number }
   | { type: "date"; value: string; format: DateFormat; year: number; month: number; day: number }
   | {
@@ -72,19 +75,23 @@ export type TokenizeOptions = {
   useDictionary?: boolean;
   useNumbers?: boolean;
   useReferences?: boolean;
+  useShareDictionary?: boolean;
 };
 
 const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
   useDictionary: true,
   useNumbers: true,
   useReferences: true,
+  useShareDictionary: true,
 };
 
 const MAX_U64 = (1n << 64n) - 1n;
 
 export function tokenize(source: string, options: TokenizeOptions = {}): Token[] {
   const resolved = { ...DEFAULT_TOKENIZE_OPTIONS, ...options };
-  const dictionary = resolved.useDictionary ? dictionaryAndStructuredMatches : () => [];
+  const dictionary = resolved.useDictionary
+    ? (source: string, position: number) => dictionaryAndStructuredMatches(source, position, resolved.useShareDictionary)
+    : () => [];
   const numbers = resolved.useNumbers ? numericMatches : () => [];
   const references = resolved.useReferences ? referencesAt : () => [];
   return tokenizeWithCandidates(source, dictionary, numbers, references);
@@ -126,7 +133,7 @@ export function materialize(tokens: Token[], seed = ""): string {
       continue;
     }
 
-    if (token.type === "dict" || token.type === "cjk") {
+    if (token.type === "dict" || token.type === "share" || token.type === "cjk") {
       output += token.value;
       continue;
     }
@@ -173,6 +180,7 @@ export function tokenCost(token: Token): number {
   if (token.type === "lit") return literalCost(token.value);
   if (token.type === "cjk") return asciiStructuredHeaderBits() + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
   if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
+  if (token.type === "share") return asciiStructuredHeaderBits() + SHARE_DICTIONARY_BITS;
   if (token.type === "ref") return refCost(token.offset, token.length);
   if (token.type === "date") return 6 + datePayloadBits();
   if (token.type === "datetime") return 6 + dateTimePayloadBits(token.format === "iso-ms-z");
@@ -203,8 +211,23 @@ function candidatesAt(
   return candidates;
 }
 
-function dictionaryAndStructuredMatches(source: string, position: number): Token[] {
-  return [...dictionaryMatches(source, position), ...structuredTextMatches(source, position)];
+function dictionaryAndStructuredMatches(source: string, position: number, useShareDictionary: boolean): Token[] {
+  return [
+    ...dictionaryMatches(source, position),
+    ...(useShareDictionary ? shareDictionaryMatches(source, position) : []),
+    ...structuredTextMatches(source, position),
+  ];
+}
+
+function shareDictionaryMatches(source: string, position: number): Token[] {
+  const matches: Token[] = [];
+  for (let id = 0; id < SHARE_DICTIONARY.length; id += 1) {
+    const value = SHARE_DICTIONARY[id];
+    if (source.startsWith(value, position)) {
+      matches.push({ type: "share", id, value });
+    }
+  }
+  return matches;
 }
 
 function structuredTextMatches(source: string, position: number): Token[] {
@@ -307,6 +330,7 @@ function nextPosition(token: Token, position: number): number {
   if (token.type === "lit") return position + token.value.length;
   if (token.type === "cjk") return position + token.value.length;
   if (token.type === "dict") return position + token.value.length;
+  if (token.type === "share") return position + token.value.length;
   if (
     token.type === "date" ||
     token.type === "datetime" ||
@@ -494,6 +518,7 @@ export function tokenSymbol(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) ?? ASCII_SYMBOL;
   if (token.type === "cjk") return ASCII_SYMBOL;
   if (token.type === "dict") return dictionarySymbol(token.id);
+  if (token.type === "share") return ASCII_SYMBOL;
   if (token.type === "num" || token.type === "date" || token.type === "datetime" || token.type === "u64") return NUMBER_SYMBOL;
   if (
     token.type === "hex" ||

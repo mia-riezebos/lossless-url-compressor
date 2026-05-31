@@ -148,6 +148,93 @@ export const EXTENDED_DICTIONARY = [
   "/09/",
 ] as const;
 
+export const SHARE_DICTIONARY = [
+  "youtube.com/watch?v=",
+  "youtu.be/",
+  "m.youtube.com/watch?v=",
+  "music.youtube.com/watch?v=",
+  "soundcloud.com/",
+  "open.spotify.com/",
+  "spotify.link/",
+  "podcasts.apple.com/",
+  "music.apple.com/",
+  "github.com/",
+  "gist.github.com/",
+  "gitlab.com/",
+  "bitbucket.org/",
+  "x.com/",
+  "twitter.com/",
+  "instagram.com/",
+  "www.instagram.com/",
+  "tiktok.com/",
+  "www.tiktok.com/",
+  "vm.tiktok.com/",
+  "reddit.com/r/",
+  "www.reddit.com/r/",
+  "old.reddit.com/r/",
+  "redd.it/",
+  "bsky.app/profile/",
+  "threads.net/",
+  "www.threads.net/",
+  "facebook.com/",
+  "www.facebook.com/",
+  "fb.watch/",
+  "linkedin.com/",
+  "www.linkedin.com/",
+  "medium.com/",
+  "substack.com/",
+  "notion.so/",
+  "docs.google.com/",
+  "drive.google.com/",
+  "maps.google.com/",
+  "goo.gl/maps/",
+  "dropbox.com/",
+  "box.com/",
+  "figma.com/",
+  "canva.com/",
+  "miro.com/",
+  "slack.com/",
+  "discord.com/",
+  "discord.gg/",
+  "twitch.tv/",
+  "clips.twitch.tv/",
+  "vimeo.com/",
+  "dailymotion.com/",
+  "imgur.com/",
+  "i.imgur.com/",
+  "flickr.com/",
+  "pinterest.com/",
+  "pin.it/",
+  "amazon.com/",
+  "amzn.to/",
+  "ebay.com/",
+  "etsy.com/",
+  "producthunt.com/",
+  "news.ycombinator.com/",
+  "lobste.rs/",
+  "stackoverflow.com/questions/",
+  "stackexchange.com/questions/",
+  "arxiv.org/abs/",
+  "doi.org/",
+  "wikipedia.org/wiki/",
+  "en.wikipedia.org/wiki/",
+  "developer.mozilla.org/",
+  "docs.python.org/",
+  "npmjs.com/package/",
+  "crates.io/crates/",
+  "pypi.org/project/",
+  "rubygems.org/gems/",
+  "huggingface.co/",
+  "kaggle.com/",
+  "observablehq.com/",
+  "codesandbox.io/",
+  "codepen.io/",
+  "replit.com/",
+  "vercel.app/",
+  "netlify.app/",
+  "workers.dev/",
+] as const;
+
 export const DICTIONARY = [...PRIMARY_DICTIONARY, ...EXTENDED_DICTIONARY] as const;
 
 export const ASCII_SYMBOL = LITERAL_ALPHABET.length + PRIMARY_DICTIONARY.length;
@@ -201,8 +288,10 @@ export const ASCII_BASE64URL_CODE = 3;
 export const ASCII_LOWER_HYPHEN_CODE = 4;
 export const ASCII_CJK_CODE = 5;
 export const ASCII_UNICODE_CODE = 6;
+export const ASCII_SHARE_DICTIONARY_CODE = 7;
 export const ASCII_STRUCTURED_LENGTH_BITS = 6;
 export const UNICODE_CODE_UNIT_BITS = 16;
+export const SHARE_DICTIONARY_BITS = Math.max(1, Math.ceil(Math.log2(Math.max(1, SHARE_DICTIONARY.length))));
 export const HEX_ALPHABET = "0123456789abcdef";
 export const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 export const LOWER_HYPHEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz-";
@@ -232,6 +321,10 @@ export function extendedDictionaryIndex(id: number): number {
 
 export function isExtendedDictionaryId(id: number): boolean {
   return id >= PRIMARY_DICTIONARY.length;
+}
+
+export function shareDictionaryValue(index: number): string | undefined {
+  return SHARE_DICTIONARY[index];
 }
 
 export function decimalBitWidth(length: number): number {

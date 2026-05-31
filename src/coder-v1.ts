@@ -6,6 +6,7 @@ import {
   ASCII_HEX_CODE,
   ASCII_LOWER_HYPHEN_CODE,
   ASCII_PERCENT_CODE,
+  ASCII_SHARE_DICTIONARY_CODE,
   ASCII_STRUCTURED_LENGTH_BITS,
   ASCII_SYMBOL,
   ASCII_UNICODE_CODE,
@@ -35,6 +36,7 @@ import {
   REF_SMALL_LENGTH_BITS,
   REF_SMALL_OFFSET_BITS,
   REF_SYMBOL,
+  SHARE_DICTIONARY_BITS,
   SYMBOL_COUNT,
   TIME_HOUR_BITS,
   TIME_MILLISECOND_BITS,
@@ -48,6 +50,7 @@ import {
   isExtendedDictionaryId,
   literalSymbol,
   primaryDictionaryValue,
+  shareDictionaryValue,
 } from "./model";
 import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, type Token, tokenSymbol } from "./tokenize";
 
@@ -93,6 +96,12 @@ function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, rank
 
     if (token.type === "cjk") {
       writeAlphabetRun(writer, ASCII_CJK_CODE, token.value, CJK_ALPHABET);
+      continue;
+    }
+
+    if (token.type === "share") {
+      writer.write(ASCII_SHARE_DICTIONARY_CODE, 7);
+      writer.write(token.id, SHARE_DICTIONARY_BITS);
       continue;
     }
 
@@ -370,6 +379,11 @@ function readAsciiEscaped(reader: BitReader): string {
   if (code === ASCII_LOWER_HYPHEN_CODE) return readAlphabetRun(reader, LOWER_HYPHEN_ALPHABET);
   if (code === ASCII_CJK_CODE) return readAlphabetRun(reader, CJK_ALPHABET);
   if (code === ASCII_UNICODE_CODE) return String.fromCharCode(reader.read(UNICODE_CODE_UNIT_BITS));
+  if (code === ASCII_SHARE_DICTIONARY_CODE) {
+    const shared = shareDictionaryValue(reader.read(SHARE_DICTIONARY_BITS));
+    if (shared === undefined) throw new Error("Invalid share dictionary index");
+    return shared;
+  }
 
   return String.fromCharCode(code);
 }

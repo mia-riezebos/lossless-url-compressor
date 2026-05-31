@@ -33,8 +33,8 @@ Start with [`SPEC.md`](./SPEC.md).
 - `/1/` is the current headerless radix format with a static prefix code for token symbols. `/0/` payloads still decode for compatibility.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
-  - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, numeric runs, and LZ refs
-  - `model.ts`: generated literal alphabet + dictionaries from Wikipedia externallinks analysis
+  - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, curated sharing-site routes, numeric runs, and LZ refs
+  - `model.ts`: generated literal alphabet + dictionaries plus v1-only sharing-route dictionary
   - `coder.ts`: token stream to bits
   - `radix.ts`: bits to URL-observable alphabet
   - `codec.ts`: glue

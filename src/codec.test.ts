@@ -134,6 +134,25 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encoded.payload)).toBe(source);
   });
 
+  it("packs popular sharing domains and routes", () => {
+    const sources = [
+      "https://youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://soundcloud.com/aphex-twin/windowlicker",
+      "https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6?si=abc123",
+      "https://github.com/mia-riezebos/lossless-url-compressor/issues/123",
+      "https://docs.google.com/document/d/1abcdEFGhijkLMNOPqrstUVwxyz/edit?usp=sharing",
+      "https://stackoverflow.com/questions/12345678/how-to-do-the-thing",
+    ];
+
+    for (const source of sources) {
+      const encoded = encodeUrl(source, { useCjkPayload: true });
+      const withoutShareDictionary = encodeUrl(source, { tokenizer: { useShareDictionary: false }, useCjkPayload: true });
+
+      expect(encoded.stats.payloadLength).toBeLessThan(withoutShareDictionary.stats.payloadLength);
+      expect(decodeUrlPayload(encoded.payload)).toBe(source);
+    }
+  });
+
   it("packs URL-safe base64-ish ids and long lowercase hyphen slugs", () => {
     const source = "https://youtu.be/dQw4w9WgXcQ/how-to-build-a-stateless-lossless-url-compressor";
     const encoded = encodeUrl(source);
