@@ -30,7 +30,7 @@ Start with [`SPEC.md`](./SPEC.md).
 - Unicode input URLs are supported; payloads are ASCII-safe by default with optional CJK Unicode output for fewer visible chars.
 - Optional leading `#` payload when fragment/client-max mode is enabled.
 - Hono Worker in `src/worker.ts` redirects server-visible payloads directly to the decoded URL.
-- `/1/` is the current payload format: headerless radix output plus a static prefix code for token symbols. `/0/` payloads still decode for compatibility.
+- `/1/`, `/2/`, and `/3/` are headerless radix formats with different static prefix-code tables for token symbols. The UI can auto-pick the shortest; `/0/` payloads still decode for compatibility.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
   - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, numeric runs, and LZ refs

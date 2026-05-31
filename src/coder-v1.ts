@@ -53,7 +53,7 @@ import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, t
 
 const FIRST_LITERAL_SYMBOLS = Array.from({ length: 13 }, (_, index) => index);
 const SECOND_LITERAL_SYMBOLS = Array.from({ length: 15 }, (_, index) => index + 13);
-const PREFERRED_SYMBOLS = [
+const V1_PREFERRED_SYMBOLS = [
   ...FIRST_LITERAL_SYMBOLS,
   LITERAL_ALPHABET.length,
   END_SYMBOL,
@@ -61,18 +61,70 @@ const PREFERRED_SYMBOLS = [
   ...SECOND_LITERAL_SYMBOLS,
   LITERAL_ALPHABET.length + 1,
 ] as const;
-const V1_SYMBOL_ORDER = [
-  ...PREFERRED_SYMBOLS,
-  ...Array.from({ length: SYMBOL_COUNT }, (_, symbol) => symbol).filter((symbol) => !PREFERRED_SYMBOLS.includes(symbol)),
-];
-const V1_SYMBOL_RANKS = new Map(V1_SYMBOL_ORDER.map((symbol, rank) => [symbol, rank]));
+const V2_PREFERRED_SYMBOLS = [
+  EXT_DICT_SYMBOL,
+  NUMBER_SYMBOL,
+  ASCII_SYMBOL,
+  END_SYMBOL,
+  REF_SYMBOL,
+  ...FIRST_LITERAL_SYMBOLS.slice(0, 11),
+] as const;
+const V3_PREFERRED_SYMBOLS = [
+  REF_SYMBOL,
+  EXT_DICT_SYMBOL,
+  ASCII_SYMBOL,
+  NUMBER_SYMBOL,
+  END_SYMBOL,
+  7, // /
+  12, // .
+  0, // e
+  1, // a
+  3, // t
+  8, // s
+  9, // n
+  10, // c
+  11, // l
+  13, // m
+  14, // w
+] as const;
+
+const V1_SYMBOL_ORDER = symbolOrder(V1_PREFERRED_SYMBOLS);
+const V2_SYMBOL_ORDER = symbolOrder(V2_PREFERRED_SYMBOLS);
+const V3_SYMBOL_ORDER = symbolOrder(V3_PREFERRED_SYMBOLS);
+const V1_SYMBOL_RANKS = symbolRanks(V1_SYMBOL_ORDER);
+const V2_SYMBOL_RANKS = symbolRanks(V2_SYMBOL_ORDER);
+const V3_SYMBOL_RANKS = symbolRanks(V3_SYMBOL_ORDER);
+
+function symbolOrder(preferred: readonly number[]): number[] {
+  const uniquePreferred = [...new Set(preferred)];
+  return [
+    ...uniquePreferred,
+    ...Array.from({ length: SYMBOL_COUNT }, (_, symbol) => symbol).filter((symbol) => !uniquePreferred.includes(symbol)),
+  ];
+}
+
+function symbolRanks(order: number[]): Map<number, number> {
+  return new Map(order.map((symbol, rank) => [symbol, rank]));
+}
 
 export function encodeTokenStreamV1(tokens: Token[], httpsOmitted: boolean): number[] {
+  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V1_SYMBOL_RANKS);
+}
+
+export function encodeTokenStreamV2(tokens: Token[], httpsOmitted: boolean): number[] {
+  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V2_SYMBOL_RANKS);
+}
+
+export function encodeTokenStreamV3(tokens: Token[], httpsOmitted: boolean): number[] {
+  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V3_SYMBOL_RANKS);
+}
+
+function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, ranks: Map<number, number>): number[] {
   const writer = new BitWriter();
   writer.write(httpsOmitted ? 0 : 1, 1);
 
   for (const token of tokens) {
-    writeTokenSymbol(writer, tokenSymbol(token));
+    writeTokenSymbol(writer, tokenSymbol(token), ranks);
 
     if (token.type === "cjk") {
       writeAlphabetRun(writer, ASCII_CJK_CODE, token.value, CJK_ALPHABET);
@@ -143,17 +195,29 @@ export function encodeTokenStreamV1(tokens: Token[], httpsOmitted: boolean): num
     }
   }
 
-  writeTokenSymbol(writer, END_SYMBOL);
+  writeTokenSymbol(writer, END_SYMBOL, ranks);
   return writer.bits;
 }
 
 export function decodeTokenStreamV1(bits: number[]): { httpsOmitted: boolean; body: string } {
+  return decodeTokenStreamWithOrder(bits, V1_SYMBOL_ORDER);
+}
+
+export function decodeTokenStreamV2(bits: number[]): { httpsOmitted: boolean; body: string } {
+  return decodeTokenStreamWithOrder(bits, V2_SYMBOL_ORDER);
+}
+
+export function decodeTokenStreamV3(bits: number[]): { httpsOmitted: boolean; body: string } {
+  return decodeTokenStreamWithOrder(bits, V3_SYMBOL_ORDER);
+}
+
+function decodeTokenStreamWithOrder(bits: number[], order: number[]): { httpsOmitted: boolean; body: string } {
   const reader = new BitReader(bits);
   const httpsOmitted = reader.read(1) === 0;
   let body = "";
 
   while (!reader.done) {
-    const symbol = readTokenSymbol(reader);
+    const symbol = readTokenSymbol(reader, order);
 
     if (symbol < LITERAL_ALPHABET.length) {
       body += LITERAL_ALPHABET[symbol];
@@ -203,8 +267,8 @@ export function decodeTokenStreamV1(bits: number[]): { httpsOmitted: boolean; bo
   throw new Error("Missing end token");
 }
 
-function writeTokenSymbol(writer: BitWriter, symbol: number): void {
-  const rank = V1_SYMBOL_RANKS.get(symbol);
+function writeTokenSymbol(writer: BitWriter, symbol: number, ranks: Map<number, number>): void {
+  const rank = ranks.get(symbol);
   if (rank === undefined) throw new Error(`Invalid v1 token symbol: ${symbol}`);
 
   if (rank < 16) {
@@ -229,15 +293,15 @@ function writeTokenSymbol(writer: BitWriter, symbol: number): void {
   writer.write(rank - 48, 4);
 }
 
-function readTokenSymbol(reader: BitReader): number {
-  if (reader.read(1) === 0) return symbolAtRank(reader.read(4));
-  if (reader.read(1) === 0) return symbolAtRank(16 + reader.read(4));
-  if (reader.read(1) === 0) return symbolAtRank(32 + reader.read(4));
-  return symbolAtRank(48 + reader.read(4));
+function readTokenSymbol(reader: BitReader, order: number[]): number {
+  if (reader.read(1) === 0) return symbolAtRank(reader.read(4), order);
+  if (reader.read(1) === 0) return symbolAtRank(16 + reader.read(4), order);
+  if (reader.read(1) === 0) return symbolAtRank(32 + reader.read(4), order);
+  return symbolAtRank(48 + reader.read(4), order);
 }
 
-function symbolAtRank(rank: number): number {
-  const symbol = V1_SYMBOL_ORDER[rank];
+function symbolAtRank(rank: number, order: number[]): number {
+  const symbol = order[rank];
   if (symbol === undefined) throw new Error(`Invalid v1 token rank: ${rank}`);
   return symbol;
 }

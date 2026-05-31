@@ -1,6 +1,6 @@
 import { ASCII_CLIENT_ALPHABET, ASCII_SERVER_ALPHABET, CJK_ALPHABET, hasClientFragment, isAsciiSafePayload, isCjkPayload } from "./alphabet";
 import { decodeTokenStream, encodeTokenStream } from "./coder";
-import { decodeTokenStreamV1, encodeTokenStreamV1 } from "./coder-v1";
+import { decodeTokenStreamV1, decodeTokenStreamV2, decodeTokenStreamV3, encodeTokenStreamV1, encodeTokenStreamV2, encodeTokenStreamV3 } from "./coder-v1";
 import { normalizeForCompression } from "./normalize";
 import { decodeBits, decodeTerminatedBits, encodeBits, encodeTerminatedBits } from "./radix";
 import { type TokenizeOptions, tokenize } from "./tokenize";
@@ -9,17 +9,19 @@ export const VERSION = "1";
 export const DEFAULT_ORIGIN = "https://l.mia.cx";
 const CLIENT_PAYLOAD_PREFIX = "#";
 
-export type CodecVersion = "0" | "1";
+export type CodecVersion = "0" | "1" | "2" | "3";
+export type EncodeVersion = CodecVersion | "auto";
 
 export type EncodeOptions = {
   allowFragment?: boolean;
   origin?: string;
   tokenizer?: TokenizeOptions;
   useCjkPayload?: boolean;
-  version?: CodecVersion;
+  version?: EncodeVersion;
 };
 
 export type EncodeResult = {
+  version: CodecVersion;
   normalizedUrl: string;
   payload: string;
   shortUrl: string;
@@ -34,11 +36,21 @@ export type EncodeResult = {
 
 export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeResult {
   const normalized = normalizeForCompression(input);
-  const version = options.version ?? VERSION;
   const tokens = tokenize(normalized.body, options.tokenizer);
-  const bits = version === "0"
-    ? encodeTokenStream(tokens, normalized.httpsOmitted)
-    : encodeTokenStreamV1(tokens, normalized.httpsOmitted);
+  const version = options.version ?? VERSION;
+  const versions: CodecVersion[] = version === "auto" ? ["1", "2", "3"] : [version];
+  const candidates = versions.map((candidate) => encodeUrlVersion(normalized, tokens, candidate, options));
+
+  return candidates.reduce((best, candidate) => candidate.stats.shortUrlLength < best.stats.shortUrlLength ? candidate : best);
+}
+
+function encodeUrlVersion(
+  normalized: ReturnType<typeof normalizeForCompression>,
+  tokens: ReturnType<typeof tokenize>,
+  version: CodecVersion,
+  options: EncodeOptions,
+): EncodeResult {
+  const bits = encodeBitsForVersion(tokens, normalized.httpsOmitted, version);
   const allowFragment = Boolean(options.allowFragment);
   const origin = trimTrailingSlashes(options.origin ?? DEFAULT_ORIGIN);
   const serverAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_SERVER_ALPHABET;
@@ -49,6 +61,7 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   const shortUrl = `${origin}/${version}/${payload}`;
 
   return {
+    version,
     normalizedUrl: normalized.normalizedUrl,
     payload,
     shortUrl,
@@ -62,17 +75,31 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   };
 }
 
+function encodeBitsForVersion(tokens: ReturnType<typeof tokenize>, httpsOmitted: boolean, version: CodecVersion): number[] {
+  if (version === "0") return encodeTokenStream(tokens, httpsOmitted);
+  if (version === "1") return encodeTokenStreamV1(tokens, httpsOmitted);
+  if (version === "2") return encodeTokenStreamV2(tokens, httpsOmitted);
+  return encodeTokenStreamV3(tokens, httpsOmitted);
+}
+
 export function decodeUrlPayload(payload: string, version: CodecVersion = VERSION): string {
   const surface = decodePayloadSurface(payload);
   const clientMax = surface.startsWith(CLIENT_PAYLOAD_PREFIX);
   const payloadBody = clientMax ? surface.slice(CLIENT_PAYLOAD_PREFIX.length) : surface;
   const alphabet = payloadAlphabet(surface, clientMax);
-  if (version !== "0" && version !== "1") throw new Error(`Unsupported payload version: ${version}`);
+  if (!["0", "1", "2", "3"].includes(version)) throw new Error(`Unsupported payload version: ${version}`);
 
   const bits = version === "0" ? decodeBits(payloadBody, alphabet) : decodeTerminatedBits(payloadBody, alphabet);
-  const decoded = version === "0" ? decodeTokenStream(bits) : decodeTokenStreamV1(bits);
+  const decoded = decodeBitsForVersion(bits, version);
 
   return decoded.httpsOmitted ? `https://${decoded.body}` : decoded.body;
+}
+
+function decodeBitsForVersion(bits: number[], version: CodecVersion): { httpsOmitted: boolean; body: string } {
+  if (version === "0") return decodeTokenStream(bits);
+  if (version === "1") return decodeTokenStreamV1(bits);
+  if (version === "2") return decodeTokenStreamV2(bits);
+  return decodeTokenStreamV3(bits);
 }
 
 export function decodeShortUrl(shortUrlOrPayload: string): string {
@@ -89,7 +116,7 @@ export function extractPayloadVersion(shortUrlOrPayload: string): CodecVersion {
 }
 
 function parsePayloadSurface(shortUrlOrPayload: string): { version: CodecVersion; payload: string } {
-  const match = /\/([01])\//.exec(shortUrlOrPayload);
+  const match = /\/([0-3])\//.exec(shortUrlOrPayload);
   if (!match) return { version: VERSION, payload: shortUrlOrPayload };
 
   return {

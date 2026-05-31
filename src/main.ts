@@ -1,4 +1,4 @@
-import { type CodecVersion, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
+import { type EncodeVersion, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
@@ -43,7 +43,7 @@ function renderEncode(): void {
       allowFragment: allowFragment.checked,
       origin: window.location.origin,
       useCjkPayload: useCjkPayload.checked,
-      version: codecVersion.value as CodecVersion,
+      version: codecVersion.value as EncodeVersion,
     });
 
     syncing = true;
