@@ -27,7 +27,7 @@ describe("worker", () => {
     expect(response.headers.get("Location")).toBe(source);
   });
 
-  it("rejects non-canonical short URLs", async () => {
+  it("serves the app shell for non-canonical short URLs", async () => {
     const source = "https://youtube.com/watch?v=dQw4w9WgXcQ";
     const alias = encodeUrl(source, {
       origin: "https://l.mia.cx",
@@ -35,19 +35,21 @@ describe("worker", () => {
       useCjkPayload: true,
     });
 
-    const { assets } = assetMock();
+    const { assets, requests } = assetMock();
     const response = await worker.fetch(new Request(alias.shortUrl), { ASSETS: assets });
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Non-canonical short URL payload");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("asset");
+    expect(requests).toEqual(["https://l.mia.cx/"]);
   });
 
-  it("rejects legacy v0 short URLs on the public redirect path", async () => {
-    const { assets } = assetMock();
+  it("serves the app shell for legacy v0 short URLs", async () => {
+    const { assets, requests } = assetMock();
     const response = await worker.fetch(new Request("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿"), { ASSETS: assets });
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Non-canonical short URL payload");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("asset");
+    expect(requests).toEqual(["https://l.mia.cx/"]);
   });
 
   it("serves assets when no server-visible payload exists", async () => {

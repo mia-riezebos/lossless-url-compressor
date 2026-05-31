@@ -1,8 +1,10 @@
-import { type CodecVersion, decodeCanonicalShortUrl, encodeUrl, extractPayloadSurface } from "./codec";
+import { type CodecVersion, decodeCanonicalShortUrl, decodeShortUrl, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
+const inputVisit = getElement<HTMLAnchorElement>("input-visit");
+const outputVisit = getElement<HTMLAnchorElement>("output-visit");
 const codecVersion = getElement<HTMLInputElement>("codec-version");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
 const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
@@ -14,8 +16,7 @@ let syncing = false;
 input.value = "https://youtube.com/watch?v=dQw4w9WgXcQ";
 
 registerServiceWorker();
-redirectCurrentUrlDecode();
-renderEncode();
+if (!decodeCurrentUrl()) renderEncode();
 
 for (const element of [input, codecVersion, allowFragment, useCjkPayload]) {
   element.addEventListener("input", renderEncode);
@@ -36,6 +37,7 @@ function renderEncode(): void {
       output.value = "";
       syncing = false;
       stats.textContent = "";
+      updateVisitLinks();
       return;
     }
 
@@ -50,11 +52,13 @@ function renderEncode(): void {
     output.value = result.shortUrl;
     syncing = false;
     stats.textContent = formatEncodeStats(result);
+    updateVisitLinks();
   } catch (caught) {
     syncing = true;
     output.value = "";
     syncing = false;
     stats.textContent = "";
+    updateVisitLinks();
     error.textContent = caught instanceof Error ? caught.message : String(caught);
   }
 }
@@ -63,13 +67,14 @@ function renderDecodeFromOutput(): void {
   if (syncing || !output.value.trim()) return;
 
   try {
-    const url = decodeCanonicalShortUrl(output.value.trim());
+    const decoded = decodeForUi(output.value.trim());
 
     syncing = true;
-    input.value = url;
+    input.value = decoded.url;
     syncing = false;
+    updateVisitLinks();
     error.textContent = "";
-    stats.textContent = "decoded output into input";
+    stats.textContent = decoded.canonical ? "decoded output into input" : "non-canonical short URL decoded locally; redirects are disabled";
   } catch (caught) {
     stats.textContent = "output is not a valid compressed URL/payload yet";
     error.textContent = caught instanceof Error ? caught.message : String(caught);
@@ -80,6 +85,28 @@ function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
   return `compression ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`;
 }
 
+function decodeForUi(value: string): { url: string; canonical: boolean } {
+  try {
+    return { url: decodeCanonicalShortUrl(value), canonical: true };
+  } catch {
+    return { url: decodeShortUrl(value), canonical: false };
+  }
+}
+
+function updateVisitLinks(): void {
+  setVisitLink(inputVisit, input.value.trim());
+  setVisitLink(outputVisit, output.value.trim());
+}
+
+function setVisitLink(link: HTMLAnchorElement, value: string): void {
+  if (!value) {
+    link.removeAttribute("href");
+    return;
+  }
+
+  link.href = value;
+}
+
 function registerServiceWorker(): void {
   if (!("serviceWorker" in navigator) || !import.meta.env.PROD) return;
   navigator.serviceWorker.register("/sw.js").catch(() => {
@@ -87,15 +114,30 @@ function registerServiceWorker(): void {
   });
 }
 
-function redirectCurrentUrlDecode(): void {
-  if (extractPayloadSurface(window.location.href) === window.location.href) return;
+function decodeCurrentUrl(): boolean {
+  if (extractPayloadSurface(window.location.href) === window.location.href) return false;
+
+  const payload = extractPayloadSurface(window.location.href);
+  if (!payload) return false;
 
   try {
-    const payload = extractPayloadSurface(window.location.href);
-    if (!payload) return;
     window.location.replace(decodeCanonicalShortUrl(window.location.href));
-  } catch (caught) {
-    error.textContent = caught instanceof Error ? caught.message : String(caught);
+    return true;
+  } catch {
+    try {
+      const url = decodeShortUrl(window.location.href);
+      syncing = true;
+      input.value = url;
+      output.value = window.location.href;
+      syncing = false;
+      updateVisitLinks();
+      stats.textContent = "non-canonical short URL decoded locally; redirects are disabled";
+      error.textContent = "";
+      return true;
+    } catch (caught) {
+      error.textContent = caught instanceof Error ? caught.message : String(caught);
+      return true;
+    }
   }
 }
 
