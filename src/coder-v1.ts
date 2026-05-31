@@ -53,15 +53,9 @@ import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, t
 
 const FIRST_LITERAL_SYMBOLS = Array.from({ length: 13 }, (_, index) => index);
 const SECOND_LITERAL_SYMBOLS = Array.from({ length: 15 }, (_, index) => index + 13);
+
+// /1/ is the short/common-ASCII profile. Keep structured tokens and common URL syntax cheap.
 const V1_PREFERRED_SYMBOLS = [
-  ...FIRST_LITERAL_SYMBOLS,
-  LITERAL_ALPHABET.length,
-  END_SYMBOL,
-  REF_SYMBOL,
-  ...SECOND_LITERAL_SYMBOLS,
-  LITERAL_ALPHABET.length + 1,
-] as const;
-const V2_PREFERRED_SYMBOLS = [
   EXT_DICT_SYMBOL,
   NUMBER_SYMBOL,
   ASCII_SYMBOL,
@@ -69,6 +63,18 @@ const V2_PREFERRED_SYMBOLS = [
   REF_SYMBOL,
   ...FIRST_LITERAL_SYMBOLS.slice(0, 11),
 ] as const;
+
+// /2/ is the general profile: the original v1-ish Common Crawl literal ordering.
+const V2_PREFERRED_SYMBOLS = [
+  ...FIRST_LITERAL_SYMBOLS,
+  LITERAL_ALPHABET.length,
+  END_SYMBOL,
+  REF_SYMBOL,
+  ...SECOND_LITERAL_SYMBOLS,
+  LITERAL_ALPHABET.length + 1,
+] as const;
+
+// /3/ is the long/query-heavy profile. References and structure escapes get priority.
 const V3_PREFERRED_SYMBOLS = [
   REF_SYMBOL,
   EXT_DICT_SYMBOL,

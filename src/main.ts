@@ -1,4 +1,4 @@
-import { type EncodeVersion, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
+import { type EncodeVersion, decodeShortUrl, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
@@ -63,7 +63,7 @@ function renderDecodeFromOutput(): void {
   if (syncing || !output.value.trim()) return;
 
   try {
-    const url = decodeUrlPayload(extractPayloadSurface(output.value.trim()));
+    const url = decodeShortUrl(output.value.trim());
 
     syncing = true;
     input.value = url;
