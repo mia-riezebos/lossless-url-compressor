@@ -82,7 +82,8 @@ function renderDecodeFromOutput(): void {
 }
 
 function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
-  return `compression ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`;
+  const ratio = result.stats.shortUrlLength / result.stats.normalizedLength;
+  return `visible length: ${result.stats.shortUrlLength}/${result.stats.normalizedLength} chars (${ratio.toFixed(2)}x)`;
 }
 
 function decodeForUi(value: string): { url: string; canonical: boolean } {
