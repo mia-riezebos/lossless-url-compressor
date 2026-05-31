@@ -37,7 +37,7 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   const clientAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_CLIENT_ALPHABET;
   const serverPayload = encodeBits(bits, serverAlphabet);
   const clientPayload = `${CLIENT_PAYLOAD_PREFIX}${encodeBits(bits, clientAlphabet)}`;
-  const payload = allowFragment && clientPayload.length < serverPayload.length ? clientPayload : serverPayload;
+  const payload = allowFragment ? clientPayload : serverPayload;
   const shortUrl = `${origin}/${VERSION}/${payload}`;
 
   return {

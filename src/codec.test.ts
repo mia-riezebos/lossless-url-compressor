@@ -149,12 +149,13 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeUrlPayload(encoded.payload)).toBe("https://example.com/a#frag");
   });
 
-  it("allows but does not force fragment payloads", () => {
-    const serverOnly = encodeUrl("https://example.com/a#frag#two", { allowFragment: false });
-    const fragmentAllowed = encodeUrl("https://example.com/a#frag#two", { allowFragment: true });
+  it("forces fragment payloads when privacy mode is enabled", () => {
+    const encoded = encodeUrl("https://example.com/a#frag#two", { allowFragment: true });
 
-    expect(fragmentAllowed.stats.payloadLength).toBeLessThanOrEqual(serverOnly.stats.payloadLength);
-    expect(decodeUrlPayload(fragmentAllowed.payload)).toBe("https://example.com/a#frag#two");
+    expect(encoded.payload.startsWith("#")).toBe(true);
+    expect(encoded.shortUrl).toContain("/0/#");
+    expect(encoded.carrier).toBe("client-max");
+    expect(decodeUrlPayload(encoded.payload)).toBe("https://example.com/a#frag#two");
   });
 
   it("decodes from a full short URL without URL parsing", () => {

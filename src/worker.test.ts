@@ -23,4 +23,15 @@ describe("worker", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("asset");
   });
+
+  it("cannot see fragment payloads and leaves them for client-side decode", async () => {
+    const source = "https://example.com/blog/2026/05/28/how-to-build-things";
+    const encoded = encodeUrl(source, { origin: "https://l.mia.cx", allowFragment: true });
+    const serverVisibleUrl = encoded.shortUrl.slice(0, encoded.shortUrl.indexOf("#"));
+
+    const response = await worker.fetch(new Request(serverVisibleUrl), { ASSETS });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("asset");
+  });
 });
