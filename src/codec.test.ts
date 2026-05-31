@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
+import { decodeCanonicalShortUrl, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
 import { isAsciiSafePayload } from "./alphabet";
 
 const ASCII_SAFE_WITH_OPTIONAL_HASH = /^[\x00-\x7f]*$/;
@@ -183,6 +183,20 @@ describe("MVP ASCII-safe codec", () => {
     expect(encoded.shortUrl).toContain("/1/");
     expect(decodeShortUrl(encoded.shortUrl)).toBe("https://github.com/mia/lossless-url-compressor/issues/123");
     expect(extractPayloadSurface(encoded.shortUrl)).toBe(encoded.payload);
+  });
+
+  it("rejects non-canonical token aliases", () => {
+    const source = "https://youtube.com/watch?v=dQw4w9WgXcQ";
+    const canonical = encodeUrl(source, { useCjkPayload: true });
+    const alias = encodeUrl(source, {
+      tokenizer: { useRoutes: false, useShareDictionary: false },
+      useCjkPayload: true,
+    });
+
+    expect(alias.payload).not.toBe(canonical.payload);
+    expect(decodeShortUrl(alias.shortUrl)).toBe(source);
+    expect(() => decodeCanonicalShortUrl(alias.shortUrl)).toThrow("Non-canonical short URL payload");
+    expect(decodeCanonicalShortUrl(canonical.shortUrl)).toBe(source);
   });
 
   it("can encode and decode v0 short URLs", () => {

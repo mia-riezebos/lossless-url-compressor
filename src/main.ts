@@ -1,4 +1,4 @@
-import { type CodecVersion, decodeShortUrl, encodeUrl, extractPayloadSurface } from "./codec";
+import { type CodecVersion, decodeCanonicalShortUrl, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
@@ -63,7 +63,7 @@ function renderDecodeFromOutput(): void {
   if (syncing || !output.value.trim()) return;
 
   try {
-    const url = decodeShortUrl(output.value.trim());
+    const url = decodeCanonicalShortUrl(output.value.trim());
 
     syncing = true;
     input.value = url;
@@ -93,7 +93,7 @@ function redirectCurrentUrlDecode(): void {
   try {
     const payload = extractPayloadSurface(window.location.href);
     if (!payload) return;
-    window.location.replace(decodeShortUrl(window.location.href));
+    window.location.replace(decodeCanonicalShortUrl(window.location.href));
   } catch (caught) {
     error.textContent = caught instanceof Error ? caught.message : String(caught);
   }

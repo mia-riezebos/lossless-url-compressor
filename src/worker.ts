@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { decodeShortUrl, extractPayloadSurface } from "./codec";
+import { decodeCanonicalShortUrl, extractPayloadSurface } from "./codec";
 
 type Bindings = {
   ASSETS: Fetcher;
@@ -15,7 +15,7 @@ app.get("*", async (context) => {
     if (!payload) return context.env.ASSETS.fetch(rootAssetRequest(context.req.raw));
 
     try {
-      return context.redirect(decodeShortUrl(rawUrl), 302);
+      return context.redirect(decodeCanonicalShortUrl(rawUrl), 302);
     } catch (caught) {
       return context.text(caught instanceof Error ? caught.message : String(caught), 400);
     }

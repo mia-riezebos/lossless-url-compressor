@@ -91,6 +91,23 @@ export function decodeShortUrl(shortUrlOrPayload: string): string {
   return decodeUrlPayload(parsed.payload, parsed.version);
 }
 
+export function decodeCanonicalShortUrl(shortUrlOrPayload: string): string {
+  const parsed = parsePayloadSurface(shortUrlOrPayload);
+  const decoded = decodeUrlPayload(parsed.payload, parsed.version);
+  const surface = decodePayloadSurface(parsed.payload);
+  const canonical = encodeUrl(decoded, {
+    allowFragment: hasClientFragment(surface),
+    useCjkPayload: isCjkPayload(surface),
+    version: VERSION,
+  });
+
+  if (parsed.version !== VERSION || surface !== canonical.payload) {
+    throw new Error("Non-canonical short URL payload");
+  }
+
+  return decoded;
+}
+
 export function extractPayloadSurface(shortUrlOrPayload: string): string {
   return parsePayloadSurface(shortUrlOrPayload).payload;
 }

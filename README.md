@@ -29,8 +29,8 @@ Start with [`SPEC.md`](./SPEC.md).
 - Manual scheme/host normalization in `src/normalize.ts`; no `URL` parser.
 - Unicode input URLs are supported; payloads are ASCII-safe by default with optional CJK Unicode output for fewer visible chars.
 - Optional leading `#` payload when fragment/client-max mode is enabled.
-- Hono Worker in `src/worker.ts` redirects server-visible payloads directly to the decoded URL.
-- `/1/` is the current headerless radix format with a static prefix code for token symbols. `/0/` payloads still decode for compatibility.
+- Hono Worker in `src/worker.ts` redirects only canonical server-visible payloads to the decoded URL.
+- `/1/` is the current headerless radix format with a static prefix code for token symbols. `/0/` payloads still decode in the raw codec for compatibility, but the public redirect path rejects them as non-canonical.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
   - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, curated sharing-site routes, numeric runs, and LZ refs
