@@ -12,16 +12,23 @@ app.get("*", async (context) => {
   const payload = extractPayloadSurface(rawUrl);
 
   if (payload !== rawUrl) {
-    if (payload) {
-      try {
-        return context.redirect(decodeShortUrl(rawUrl), 302);
-      } catch (caught) {
-        return context.text(caught instanceof Error ? caught.message : String(caught), 400);
-      }
+    if (!payload) return context.env.ASSETS.fetch(rootAssetRequest(context.req.raw));
+
+    try {
+      return context.redirect(decodeShortUrl(rawUrl), 302);
+    } catch (caught) {
+      return context.text(caught instanceof Error ? caught.message : String(caught), 400);
     }
   }
 
   return context.env.ASSETS.fetch(context.req.raw);
 });
+
+function rootAssetRequest(request: Request): Request {
+  const url = new URL(request.url);
+  url.pathname = "/";
+  url.search = "";
+  return new Request(url, request);
+}
 
 export default app;
