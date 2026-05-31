@@ -166,30 +166,11 @@ describe("MVP ASCII-safe codec", () => {
     expect(extractPayloadSurface(encoded.shortUrl)).toBe(encoded.payload);
   });
 
-  it("auto-selects the shortest v1-v3 codec", () => {
-    const source = "https://github.com/yanorei32/url-compressor";
-    const automatic = encodeUrl(source, { useCjkPayload: true, version: "auto" });
-    const manual = ["1", "2", "3"].map((version) => encodeUrl(source, { useCjkPayload: true, version: version as "1" | "2" | "3" }));
-
-    expect(automatic.stats.shortUrlLength).toBe(Math.min(...manual.map((result) => result.stats.shortUrlLength)));
-    expect(decodeShortUrl(automatic.shortUrl)).toBe(source);
-  });
-
   it("can encode and decode v0 short URLs", () => {
     const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { version: "0", useCjkPayload: true });
 
     expect(encoded.shortUrl).toContain("/0/");
     expect(decodeShortUrl(encoded.shortUrl)).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
-  });
-
-  it("can encode and decode v2 and v3 short URLs", () => {
-    const source = "https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams?utm_source=example&utm_medium=social&utm_campaign=test";
-
-    for (const version of ["2", "3"] as const) {
-      const encoded = encodeUrl(source, { version, useCjkPayload: true });
-      expect(encoded.shortUrl).toContain(`/${version}/`);
-      expect(decodeShortUrl(encoded.shortUrl)).toBe(source);
-    }
   });
 
   it("still decodes legacy v0 short URLs", () => {

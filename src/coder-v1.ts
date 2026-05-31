@@ -53,8 +53,6 @@ import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, t
 
 const FIRST_LITERAL_SYMBOLS = Array.from({ length: 13 }, (_, index) => index);
 const SECOND_LITERAL_SYMBOLS = Array.from({ length: 15 }, (_, index) => index + 13);
-
-// /1/ is the short/common-ASCII profile. Keep structured tokens and common URL syntax cheap.
 const V1_PREFERRED_SYMBOLS = [
   EXT_DICT_SYMBOL,
   NUMBER_SYMBOL,
@@ -62,44 +60,13 @@ const V1_PREFERRED_SYMBOLS = [
   END_SYMBOL,
   REF_SYMBOL,
   ...FIRST_LITERAL_SYMBOLS.slice(0, 11),
-] as const;
-
-// /2/ is the general profile: the original v1-ish Common Crawl literal ordering.
-const V2_PREFERRED_SYMBOLS = [
-  ...FIRST_LITERAL_SYMBOLS,
   LITERAL_ALPHABET.length,
-  END_SYMBOL,
-  REF_SYMBOL,
   ...SECOND_LITERAL_SYMBOLS,
   LITERAL_ALPHABET.length + 1,
 ] as const;
 
-// /3/ is the long/query-heavy profile. References and structure escapes get priority.
-const V3_PREFERRED_SYMBOLS = [
-  REF_SYMBOL,
-  EXT_DICT_SYMBOL,
-  ASCII_SYMBOL,
-  NUMBER_SYMBOL,
-  END_SYMBOL,
-  7, // /
-  12, // .
-  0, // e
-  1, // a
-  3, // t
-  8, // s
-  9, // n
-  10, // c
-  11, // l
-  13, // m
-  14, // w
-] as const;
-
 const V1_SYMBOL_ORDER = symbolOrder(V1_PREFERRED_SYMBOLS);
-const V2_SYMBOL_ORDER = symbolOrder(V2_PREFERRED_SYMBOLS);
-const V3_SYMBOL_ORDER = symbolOrder(V3_PREFERRED_SYMBOLS);
 const V1_SYMBOL_RANKS = symbolRanks(V1_SYMBOL_ORDER);
-const V2_SYMBOL_RANKS = symbolRanks(V2_SYMBOL_ORDER);
-const V3_SYMBOL_RANKS = symbolRanks(V3_SYMBOL_ORDER);
 
 function symbolOrder(preferred: readonly number[]): number[] {
   const uniquePreferred = [...new Set(preferred)];
@@ -115,14 +82,6 @@ function symbolRanks(order: number[]): Map<number, number> {
 
 export function encodeTokenStreamV1(tokens: Token[], httpsOmitted: boolean): number[] {
   return encodeTokenStreamWithRanks(tokens, httpsOmitted, V1_SYMBOL_RANKS);
-}
-
-export function encodeTokenStreamV2(tokens: Token[], httpsOmitted: boolean): number[] {
-  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V2_SYMBOL_RANKS);
-}
-
-export function encodeTokenStreamV3(tokens: Token[], httpsOmitted: boolean): number[] {
-  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V3_SYMBOL_RANKS);
 }
 
 function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, ranks: Map<number, number>): number[] {
@@ -207,14 +166,6 @@ function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, rank
 
 export function decodeTokenStreamV1(bits: number[]): { httpsOmitted: boolean; body: string } {
   return decodeTokenStreamWithOrder(bits, V1_SYMBOL_ORDER);
-}
-
-export function decodeTokenStreamV2(bits: number[]): { httpsOmitted: boolean; body: string } {
-  return decodeTokenStreamWithOrder(bits, V2_SYMBOL_ORDER);
-}
-
-export function decodeTokenStreamV3(bits: number[]): { httpsOmitted: boolean; body: string } {
-  return decodeTokenStreamWithOrder(bits, V3_SYMBOL_ORDER);
 }
 
 function decodeTokenStreamWithOrder(bits: number[], order: number[]): { httpsOmitted: boolean; body: string } {

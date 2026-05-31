@@ -17,7 +17,7 @@
       </label>
 
       <div class="options">
-        <label>Version <select id="codec-version"><option value="auto">auto</option><option value="1">v1 short</option><option value="2">v2 general</option><option value="3">v3 long/query</option><option value="0">v0 legacy</option></select></label>
+        <label>Version <select id="codec-version"><option value="1">v1</option><option value="0">v0 legacy</option></select></label>
         <label title="Keeps the compressed payload after # so it is decoded locally and never sent to the server."><input id="allow-fragment" type="checkbox" /> Fragment</label>
         <label title="CJK Unicode in URLs is not strictly RFC-supported, but browsers normalize it and percent-escape it on the wire."><input id="use-cjk-payload" type="checkbox" checked /> CJK (extended charset)</label>
       </div>

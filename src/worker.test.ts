@@ -27,19 +27,6 @@ describe("worker", () => {
     expect(response.headers.get("Location")).toBe(source);
   });
 
-  it("redirects v2 and v3 short URLs", async () => {
-    const source = "https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams?utm_source=example&utm_medium=social&utm_campaign=test";
-
-    for (const version of ["2", "3"] as const) {
-      const { assets } = assetMock();
-      const encoded = encodeUrl(source, { origin: "https://l.mia.cx", version, useCjkPayload: true });
-      const response = await worker.fetch(new Request(encoded.shortUrl), { ASSETS: assets });
-
-      expect(response.status).toBe(302);
-      expect(response.headers.get("Location")).toBe(source);
-    }
-  });
-
   it("redirects legacy v0 short URLs", async () => {
     const { assets } = assetMock();
     const response = await worker.fetch(new Request("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿"), { ASSETS: assets });
