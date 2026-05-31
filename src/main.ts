@@ -13,6 +13,7 @@ let syncing = false;
 
 input.value = "https://youtube.com/watch?v=dQw4w9WgXcQ";
 
+registerServiceWorker();
 redirectCurrentUrlDecode();
 renderEncode();
 
@@ -77,6 +78,13 @@ function renderDecodeFromOutput(): void {
 
 function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
   return `compression ratio: ${(result.stats.shortUrlLength / result.stats.normalizedLength).toFixed(2)}x`;
+}
+
+function registerServiceWorker(): void {
+  if (!("serviceWorker" in navigator) || !import.meta.env.PROD) return;
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    // Offline support is best-effort; encoding/decoding should not depend on SW registration.
+  });
 }
 
 function redirectCurrentUrlDecode(): void {
