@@ -166,6 +166,13 @@ describe("MVP ASCII-safe codec", () => {
     expect(extractPayloadSurface(encoded.shortUrl)).toBe(encoded.payload);
   });
 
+  it("can encode and decode v0 short URLs", () => {
+    const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { version: "0", useCjkPayload: true });
+
+    expect(encoded.shortUrl).toContain("/0/");
+    expect(decodeShortUrl(encoded.shortUrl)).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
   it("still decodes legacy v0 short URLs", () => {
     expect(decodeShortUrl("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
   });

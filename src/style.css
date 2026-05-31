@@ -27,6 +27,10 @@ textarea {
   font: 1rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
+select {
+  font: inherit;
+}
+
 label {
   margin-top: 1rem;
 }

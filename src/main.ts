@@ -1,8 +1,9 @@
-import { decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
+import { type CodecVersion, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
+const codecVersion = getElement<HTMLInputElement>("codec-version");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
 const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
 const stats = getElement<HTMLParagraphElement>("stats");
@@ -15,7 +16,7 @@ input.value = "https://youtube.com/watch?v=dQw4w9WgXcQ";
 redirectCurrentUrlDecode();
 renderEncode();
 
-for (const element of [input, allowFragment, useCjkPayload]) {
+for (const element of [input, codecVersion, allowFragment, useCjkPayload]) {
   element.addEventListener("input", renderEncode);
   element.addEventListener("change", renderEncode);
 }
@@ -41,6 +42,7 @@ function renderEncode(): void {
       allowFragment: allowFragment.checked,
       origin: window.location.origin,
       useCjkPayload: useCjkPayload.checked,
+      version: codecVersion.value as CodecVersion,
     });
 
     syncing = true;
@@ -92,5 +94,5 @@ function redirectCurrentUrlDecode(): void {
 function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing element: ${id}`);
-  return element as T;
+  return element as unknown as T;
 }

@@ -9,11 +9,14 @@ export const VERSION = "1";
 export const DEFAULT_ORIGIN = "https://l.mia.cx";
 const CLIENT_PAYLOAD_PREFIX = "#";
 
+export type CodecVersion = "0" | "1";
+
 export type EncodeOptions = {
   allowFragment?: boolean;
   origin?: string;
   tokenizer?: TokenizeOptions;
   useCjkPayload?: boolean;
+  version?: CodecVersion;
 };
 
 export type EncodeResult = {
@@ -31,15 +34,19 @@ export type EncodeResult = {
 
 export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeResult {
   const normalized = normalizeForCompression(input);
-  const bits = encodeTokenStreamV1(tokenize(normalized.body, options.tokenizer), normalized.httpsOmitted);
+  const version = options.version ?? VERSION;
+  const tokens = tokenize(normalized.body, options.tokenizer);
+  const bits = version === "0"
+    ? encodeTokenStream(tokens, normalized.httpsOmitted)
+    : encodeTokenStreamV1(tokens, normalized.httpsOmitted);
   const allowFragment = Boolean(options.allowFragment);
   const origin = trimTrailingSlashes(options.origin ?? DEFAULT_ORIGIN);
   const serverAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_SERVER_ALPHABET;
   const clientAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_CLIENT_ALPHABET;
-  const serverPayload = encodeTerminatedBits(bits, serverAlphabet);
-  const clientPayload = `${CLIENT_PAYLOAD_PREFIX}${encodeTerminatedBits(bits, clientAlphabet)}`;
+  const serverPayload = version === "0" ? encodeBits(bits, serverAlphabet) : encodeTerminatedBits(bits, serverAlphabet);
+  const clientPayload = `${CLIENT_PAYLOAD_PREFIX}${version === "0" ? encodeBits(bits, clientAlphabet) : encodeTerminatedBits(bits, clientAlphabet)}`;
   const payload = allowFragment ? clientPayload : serverPayload;
-  const shortUrl = `${origin}/${VERSION}/${payload}`;
+  const shortUrl = `${origin}/${version}/${payload}`;
 
   return {
     normalizedUrl: normalized.normalizedUrl,
@@ -55,7 +62,7 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   };
 }
 
-export function decodeUrlPayload(payload: string, version = VERSION): string {
+export function decodeUrlPayload(payload: string, version: CodecVersion = VERSION): string {
   const surface = decodePayloadSurface(payload);
   const clientMax = surface.startsWith(CLIENT_PAYLOAD_PREFIX);
   const payloadBody = clientMax ? surface.slice(CLIENT_PAYLOAD_PREFIX.length) : surface;
@@ -77,16 +84,16 @@ export function extractPayloadSurface(shortUrlOrPayload: string): string {
   return parsePayloadSurface(shortUrlOrPayload).payload;
 }
 
-export function extractPayloadVersion(shortUrlOrPayload: string): string {
+export function extractPayloadVersion(shortUrlOrPayload: string): CodecVersion {
   return parsePayloadSurface(shortUrlOrPayload).version;
 }
 
-function parsePayloadSurface(shortUrlOrPayload: string): { version: string; payload: string } {
+function parsePayloadSurface(shortUrlOrPayload: string): { version: CodecVersion; payload: string } {
   const match = /\/([01])\//.exec(shortUrlOrPayload);
   if (!match) return { version: VERSION, payload: shortUrlOrPayload };
 
   return {
-    version: match[1],
+    version: match[1] as CodecVersion,
     payload: shortUrlOrPayload.slice(match.index + match[0].length),
   };
 }
