@@ -55,3 +55,9 @@ label {
 #stats {
   overflow-wrap: anywhere;
 }
+
+.abuse {
+  margin-top: 2rem;
+  text-align: center;
+  font-size: 0.85rem;
+}
