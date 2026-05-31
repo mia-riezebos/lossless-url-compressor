@@ -153,7 +153,7 @@ describe("MVP ASCII-safe codec", () => {
     const encoded = encodeUrl("https://example.com/a#frag#two", { allowFragment: true });
 
     expect(encoded.payload.startsWith("#")).toBe(true);
-    expect(encoded.shortUrl).toContain("/0/#");
+    expect(encoded.shortUrl).toContain("/1/#");
     expect(encoded.carrier).toBe("client-max");
     expect(decodeUrlPayload(encoded.payload)).toBe("https://example.com/a#frag#two");
   });
@@ -161,8 +161,13 @@ describe("MVP ASCII-safe codec", () => {
   it("decodes from a full short URL without URL parsing", () => {
     const encoded = encodeUrl("https://github.com/mia/lossless-url-compressor/issues/123");
 
+    expect(encoded.shortUrl).toContain("/1/");
     expect(decodeShortUrl(encoded.shortUrl)).toBe("https://github.com/mia/lossless-url-compressor/issues/123");
     expect(extractPayloadSurface(encoded.shortUrl)).toBe(encoded.payload);
+  });
+
+  it("still decodes legacy v0 short URLs", () => {
+    expect(decodeShortUrl("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
   });
 
   it("uses deterministic output", () => {

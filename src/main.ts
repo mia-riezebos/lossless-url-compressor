@@ -1,4 +1,4 @@
-import { VERSION, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
+import { decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
 import "./style.css";
 
 const input = getElement<HTMLTextAreaElement>("input");
@@ -78,12 +78,12 @@ function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
 }
 
 function redirectCurrentUrlDecode(): void {
-  if (!window.location.href.includes(`/${VERSION}/`)) return;
+  if (extractPayloadSurface(window.location.href) === window.location.href) return;
 
   try {
     const payload = extractPayloadSurface(window.location.href);
     if (!payload) return;
-    window.location.replace(decodeUrlPayload(payload));
+    window.location.replace(decodeShortUrl(window.location.href));
   } catch (caught) {
     error.textContent = caught instanceof Error ? caught.message : String(caught);
   }

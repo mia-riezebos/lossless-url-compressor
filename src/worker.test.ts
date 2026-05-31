@@ -17,6 +17,13 @@ describe("worker", () => {
     expect(response.headers.get("Location")).toBe(source);
   });
 
+  it("redirects legacy v0 short URLs", async () => {
+    const response = await worker.fetch(new Request("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿"), { ASSETS });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
   it("serves assets when no server-visible payload exists", async () => {
     const response = await worker.fetch(new Request("https://l.mia.cx/"), { ASSETS });
 

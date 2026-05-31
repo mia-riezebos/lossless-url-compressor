@@ -22,6 +22,38 @@ export function encodeBits(bits: number[], alphabet: string): string {
   return `${alphabet[Math.floor(bitLength / baseNumber)]}${alphabet[bitLength % baseNumber]}${digits}`;
 }
 
+export function encodeTerminatedBits(bits: number[], alphabet: string): string {
+  let value = 1n;
+  for (const bit of bits) {
+    value = (value << 1n) | BigInt(bit);
+  }
+
+  const base = BigInt(alphabet.length);
+  let digits = "";
+
+  do {
+    digits = alphabet[Number(value % base)] + digits;
+    value /= base;
+  } while (value > 0n);
+
+  return digits;
+}
+
+export function decodeTerminatedBits(encoded: string, alphabet: string): number[] {
+  const base = BigInt(alphabet.length);
+  let value = 0n;
+
+  for (const digit of encoded) {
+    const index = alphabet.indexOf(digit);
+    if (index === -1) throw new Error(`Invalid radix digit: ${digit}`);
+    value = value * base + BigInt(index);
+  }
+
+  const binary = value.toString(2);
+  if (binary[0] !== "1") throw new Error("Missing terminated radix sentinel");
+  return [...binary.slice(1)].map((bit) => bit === "1" ? 1 : 0);
+}
+
 export function decodeBits(encoded: string, alphabet: string): number[] {
   const first = alphabet.indexOf(encoded[0]);
   const second = alphabet.indexOf(encoded[1]);
