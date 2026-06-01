@@ -19,6 +19,12 @@ Deploy with:
 pnpm deploy
 ```
 
+The optional UI view counter reads Cloudflare Analytics through the Worker. Configure a scoped token with zone analytics read access before deploying it:
+
+```sh
+pnpm dlx wrangler secret put CF_API_TOKEN
+```
+
 ## Spec
 
 Start with [`SPEC.md`](./SPEC.md).

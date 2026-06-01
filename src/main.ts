@@ -9,13 +9,15 @@ const codecVersion = getElement<HTMLInputElement>("codec-version");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
 const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
 const stats = getElement<HTMLParagraphElement>("stats");
+const views = getElement<HTMLParagraphElement>("views");
 const error = getElement<HTMLParagraphElement>("error");
 
 let syncing = false;
 
-input.value = "https://youtube.com/watch?v=dQw4w9WgXcQ";
+input.value = initialInputValue();
 
 registerServiceWorker();
+renderViewCounter();
 if (!decodeCurrentUrl()) renderEncode();
 
 for (const element of [input, codecVersion, allowFragment, useCjkPayload]) {
@@ -81,6 +83,10 @@ function renderDecodeFromOutput(): void {
   }
 }
 
+function initialInputValue(): string {
+  return new URLSearchParams(window.location.search).get("url") ?? "https://youtube.com/watch?v=dQw4w9WgXcQ";
+}
+
 function formatEncodeStats(result: ReturnType<typeof encodeUrl>): string {
   const ratio = result.stats.shortUrlLength / result.stats.normalizedLength;
   return `visible length: ${result.stats.shortUrlLength}/${result.stats.normalizedLength} chars (${ratio.toFixed(2)}x)`;
@@ -106,6 +112,17 @@ function setVisitLink(link: HTMLAnchorElement, value: string): void {
   }
 
   link.href = value;
+}
+
+function renderViewCounter(): void {
+  fetch("/api/views")
+    .then((response) => response.ok ? response.json() as Promise<{ views: number | null }> : { views: null })
+    .then((body) => {
+      if (typeof body.views === "number") views.textContent = `${body.views.toLocaleString()} visits and counting`;
+    })
+    .catch(() => {
+      // View count is decorative.
+    });
 }
 
 function registerServiceWorker(): void {

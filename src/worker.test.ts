@@ -27,6 +27,28 @@ describe("worker", () => {
     expect(response.headers.get("Location")).toBe(source);
   });
 
+  it("serves embed metadata for crawler requests instead of redirecting", async () => {
+    const source = "https://example.com/blog/2026/05/28/how-to-build-things";
+    const encoded = encodeUrl(source, { origin: "https://l.mia.cx" });
+
+    const { assets } = assetMock();
+    const response = await worker.fetch(new Request(encoded.shortUrl, { headers: { "User-Agent": "Discordbot/2.0" } }), { ASSETS: assets });
+    const text = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Location")).toBeNull();
+    expect(text).toContain("This URL was compressed using piss.zip, your destination:");
+    expect(text).toContain(source);
+  });
+
+  it("returns null views when analytics token is not configured", async () => {
+    const { assets } = assetMock();
+    const response = await worker.fetch(new Request("https://l.mia.cx/api/views"), { ASSETS: assets });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ views: null });
+  });
+
   it("serves the app shell for non-canonical short URLs", async () => {
     const source = "https://youtube.com/watch?v=dQw4w9WgXcQ";
     const alias = encodeUrl(source, {
