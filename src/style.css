@@ -56,7 +56,11 @@ label {
   overflow-wrap: anywhere;
 }
 
-.abuse {
-  margin-top: 2rem;
+#views,
+.footer-links {
   font-size: 0.85rem;
+}
+
+.footer-links {
+  margin-top: 2rem;
 }

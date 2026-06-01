@@ -118,10 +118,12 @@ function renderViewCounter(): void {
   fetch("/api/views")
     .then((response) => response.ok ? response.json() as Promise<{ views: number | null }> : { views: null })
     .then((body) => {
-      if (typeof body.views === "number") views.textContent = `${body.views.toLocaleString()} visits and counting`;
+      views.textContent = typeof body.views === "number"
+        ? `visits: ${body.views.toLocaleString()}`
+        : "visits: unavailable";
     })
     .catch(() => {
-      // View count is decorative.
+      views.textContent = "visits: unavailable";
     });
 }
 
