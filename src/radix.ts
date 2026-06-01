@@ -1,3 +1,5 @@
+const MAX_DECODE_BITS = 64 * 1024;
+
 export function encodeBits(bits: number[], alphabet: string): string {
   const bitLength = bits.length;
   const baseNumber = alphabet.length;
@@ -50,6 +52,9 @@ export function decodeTerminatedBits(encoded: string, alphabet: string): number[
   }
 
   const binary = value.toString(2);
+  if (binary.length - 1 > MAX_DECODE_BITS) {
+    throw new Error(`Terminated radix payload is too large: ${binary.length - 1} bits`);
+  }
   if (binary[0] !== "1") throw new Error("Missing terminated radix sentinel");
   return [...binary.slice(1)].map((bit) => bit === "1" ? 1 : 0);
 }
@@ -63,6 +68,9 @@ export function decodeBits(encoded: string, alphabet: string): number[] {
   }
 
   const bitLength = first * alphabet.length + second;
+  if (bitLength > MAX_DECODE_BITS) {
+    throw new Error(`Radix bit-length header is too large: ${bitLength} bits`);
+  }
   const base = BigInt(alphabet.length);
   let value = 0n;
 

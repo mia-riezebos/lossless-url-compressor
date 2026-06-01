@@ -206,6 +206,13 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeShortUrl(encoded.shortUrl)).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
   });
 
+  it("rejects version-swapped v1 CJK payloads without huge allocations", () => {
+    const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { useCjkPayload: true });
+    const versionSwapped = encoded.shortUrl.replace("/1/", "/0/");
+
+    expect(() => decodeShortUrl(versionSwapped)).toThrow("Radix bit-length header is too large");
+  });
+
   it("still decodes legacy v0 short URLs", () => {
     expect(decodeShortUrl("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
   });
