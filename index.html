@@ -15,10 +15,12 @@
   </head>
   <body>
     <main>
-      <h1>Lossless URL Compressor</h1>
+      <div class="title-row">
+        <h1>Lossless URL Compressor</h1>
+        <p id="views" aria-live="polite" title="A basic counter using Cloudflare Durable Objects. Actual visited paths and decoded URLs are not stored.">visits: loading…</p>
+      </div>
       <p>A URL-aware LZ-style encoder: it tokenizes common URL structure with a dictionary derived from Common Crawl indexes, packs numbers/dates/IDs, then back-references repeated text.</p>
       <p>Inspired by <a href="https://x.com/yanorei32/status/2059594850694283362">yanorei32</a>. <a href="https://github.com/mia-riezebos/lossless-url-compressor">GitHub</a>.</p>
-      <p id="views" aria-live="polite">visits, last 7 days: loading…</p>
 
       <label>
         Input URL <a id="input-visit" href="https://youtube.com/watch?v=dQw4w9WgXcQ">(visit)</a>
@@ -39,7 +41,7 @@
       <p id="stats"></p>
       <p id="error" role="alert"></p>
 
-      <p class="footer-links"><a href="mailto:abuse@mia.cx?subject=piss.zip%20abuse%20report&body=Please%20include%20the%20piss.zip%20URL%2C%20the%20destination%20URL%20if%20known%2C%20and%20why%20it%20is%20abusive.">report abuse</a> · <a id="bookmarklet" href="javascript:location.href='https://piss.zip/?url='+encodeURIComponent(location.href)">bookmarklet</a></p>
+      <p class="footer-links"><a href="mailto:abuse@mia.cx?subject=piss.zip%20abuse%20report&body=Please%20include%20the%20piss.zip%20URL%2C%20the%20destination%20URL%20if%20known%2C%20and%20why%20it%20is%20abusive.">report abuse</a> · <a id="bookmarklet" href="#">bookmarklet</a></p>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

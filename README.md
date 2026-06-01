@@ -19,13 +19,14 @@ Deploy with:
 pnpm deploy
 ```
 
-The optional UI view counter reads the last 7 days of Cloudflare Analytics through the Worker. Configure a scoped token with zone analytics read access before deploying it:
+The UI view counter is an all-time Durable Object counter. It snapshots to D1 every few hours for backup/history. An optional Cloudflare Analytics token can seed the counter on first boot from recent analytics:
 
 ```sh
 pnpm dlx wrangler secret put PISSZIP_ANALYTICS_TOKEN
+pnpm dlx wrangler d1 execute pisszip_analytics --remote --file migrations/d1/0001_view_counter.sql
 ```
 
-Use `PISSZIP_ANALYTICS_TOKEN` in `.env` for local `pnpm dev`. Avoid `CF_API_TOKEN` for this value because Wrangler treats that name as its own deployment auth token.
+Use `PISSZIP_ANALYTICS_TOKEN` in `.env` for local `pnpm dev` analytics fallback. Avoid `CF_API_TOKEN` for this value because Wrangler treats that name as its own deployment auth token.
 
 ## Spec
 

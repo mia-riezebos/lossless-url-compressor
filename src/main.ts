@@ -5,6 +5,7 @@ const input = getElement<HTMLTextAreaElement>("input");
 const output = getElement<HTMLTextAreaElement>("output");
 const inputVisit = getElement<HTMLAnchorElement>("input-visit");
 const outputVisit = getElement<HTMLAnchorElement>("output-visit");
+const bookmarklet = getElement<HTMLAnchorElement>("bookmarklet");
 const codecVersion = getElement<HTMLInputElement>("codec-version");
 const allowFragment = getElement<HTMLInputElement>("allow-fragment");
 const useCjkPayload = getElement<HTMLInputElement>("use-cjk-payload");
@@ -17,6 +18,7 @@ let syncing = false;
 input.value = initialInputValue();
 
 registerServiceWorker();
+renderBookmarklet();
 renderViewCounter();
 if (!decodeCurrentUrl()) renderEncode();
 
@@ -114,12 +116,17 @@ function setVisitLink(link: HTMLAnchorElement, value: string): void {
   link.href = value;
 }
 
+function renderBookmarklet(): void {
+  const appUrl = `${window.location.origin}/?url=`;
+  bookmarklet.href = `javascript:location.href=${JSON.stringify(appUrl)}+encodeURIComponent(location.href)`;
+}
+
 function renderViewCounter(): void {
   fetch("/api/views")
     .then((response) => response.ok ? response.json() as Promise<{ views: number | null }> : { views: null })
     .then((body) => {
       views.textContent = typeof body.views === "number"
-        ? `visits, last 7 days: ${body.views.toLocaleString()}`
+        ? `visits: ${body.views.toLocaleString()}`
         : "visits: unavailable";
     })
     .catch(() => {

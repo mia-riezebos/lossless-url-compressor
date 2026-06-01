@@ -1,9 +1,14 @@
 node_modules/
 dist/
-data/
 .DS_Store
-*.log
+
+# Large local training corpora and reports
+data/
 
 # Rust build output
 target/
 **/target/
+
+# Local secrets and Wrangler dev state
+.env
+.wrangler/

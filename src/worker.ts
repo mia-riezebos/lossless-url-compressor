@@ -1,22 +1,51 @@
 import { Hono } from "hono";
-import { queryViews } from "./analytics";
+import { queryViews, shouldCountVisitPath } from "./analytics";
 import { decodeCanonicalShortUrl, decodeShortUrl, extractPayloadSurface } from "./codec";
+export { ViewCounter } from "./view-counter";
 
 type Bindings = {
   ASSETS: Fetcher;
+  VIEW_COUNTER?: DurableObjectNamespace;
   PISSZIP_ANALYTICS_TOKEN?: string;
+  ADMIN_TOKEN?: string;
 };
 
-const VIEW_COUNTER_CACHE_SECONDS = 60;
+const COUNTER_URL = "https://view-counter.local";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/api/views", async (context) => {
-  return context.json({ views: await readViews(context.env.PISSZIP_ANALYTICS_TOKEN, context.req.raw) });
+  return context.json({ views: await readViews(context.env) });
+});
+
+app.post("/api/admin/views/seed", async (context) => {
+  if (!context.env.ADMIN_TOKEN || context.req.header("Authorization") !== `Bearer ${context.env.ADMIN_TOKEN}`) {
+    return context.text("Not found", 404);
+  }
+
+  if (!context.env.PISSZIP_ANALYTICS_TOKEN) {
+    return context.json({ error: "analytics token is not configured" }, 500);
+  }
+
+  const counter = viewCounter(context.env);
+  if (!counter) return context.json({ error: "view counter is not configured" }, 500);
+
+  const previousViews = await readViews(context.env) ?? 0;
+  const analyticsViews = await queryViews(context.env.PISSZIP_ANALYTICS_TOKEN);
+  const views = Math.max(previousViews, analyticsViews);
+
+  const response = await counter.fetch(`${COUNTER_URL}/seed`, {
+    method: "POST",
+    body: JSON.stringify({ views }),
+  });
+  return context.json({ ...await response.json() as { views: number }, previousViews, analyticsViews });
 });
 
 app.get("*", async (context) => {
   const rawUrl = context.req.raw.url;
+  if (shouldCountVisitPath(new URL(rawUrl).pathname)) {
+    await incrementViews(context.env);
+  }
   const payload = extractPayloadSurface(rawUrl);
 
   if (payload !== rawUrl) {
@@ -41,19 +70,21 @@ app.get("*", async (context) => {
   return context.env.ASSETS.fetch(context.req.raw);
 });
 
-async function readViews(apiToken: string | undefined, request: Request): Promise<number | null> {
-  if (!apiToken) return null;
+async function readViews(env: Bindings): Promise<number | null> {
+  const counter = viewCounter(env);
+  if (!counter) return null;
 
-  const cache = typeof caches === "undefined" ? undefined : (caches as unknown as { default: Cache }).default;
-  const cacheKey = new Request(new URL("/api/views-cache", request.url));
-  const cached = await cache?.match(cacheKey);
-  if (cached) return (await cached.json() as { views: number }).views;
+  const response = await counter.fetch(`${COUNTER_URL}/read`);
+  return (await response.json() as { views: number }).views;
+}
 
-  const views = await queryViews(apiToken);
-  await cache?.put(cacheKey, new Response(JSON.stringify({ views }), {
-    headers: { "Cache-Control": `max-age=${VIEW_COUNTER_CACHE_SECONDS}` },
-  }));
-  return views;
+async function incrementViews(env: Bindings): Promise<void> {
+  await viewCounter(env)?.fetch(`${COUNTER_URL}/increment`, { method: "POST" });
+}
+
+function viewCounter(env: Bindings): DurableObjectStub | null {
+  if (!env.VIEW_COUNTER) return null;
+  return env.VIEW_COUNTER.get(env.VIEW_COUNTER.idFromName("global"));
 }
 
 function isEmbedBot(userAgent: string): boolean {

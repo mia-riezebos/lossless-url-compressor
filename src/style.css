@@ -15,6 +15,18 @@ main {
   width: min(42rem, calc(100vw - 2rem));
 }
 
+.title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.title-row h1,
+.title-row #views {
+  margin-bottom: 0;
+}
+
 label,
 textarea {
   display: block;
@@ -59,6 +71,10 @@ label {
 #views,
 .footer-links {
   font-size: 0.85rem;
+}
+
+#views {
+  cursor: help;
 }
 
 .footer-links {

@@ -5,13 +5,35 @@
   "compatibility_date": "2026-05-28",
   "assets": {
     "binding": "ASSETS",
-    "directory": "./dist"
+    "directory": "./dist",
+    "run_worker_first": true
   },
   "routes": [
     {
       "zone_name": "piss.zip",
       "custom_domain": true,
       "pattern": "piss.zip"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "VIEW_COUNTER",
+        "class_name": "ViewCounter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ViewCounter"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "ANALYTICS_DB",
+      "database_name": "pisszip_analytics",
+      "database_id": "0a04919c-67a5-4305-b449-a7456468ba02"
     }
   ]
 }
