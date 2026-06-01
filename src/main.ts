@@ -118,7 +118,7 @@ function setVisitLink(link: HTMLAnchorElement, value: string): void {
 
 function renderBookmarklet(): void {
   const appUrl = `${window.location.origin}/?url=`;
-  bookmarklet.href = `javascript:location.href=${JSON.stringify(appUrl)}+encodeURIComponent(location.href)`;
+  bookmarklet.href = `javascript:open(${JSON.stringify(appUrl)}+encodeURIComponent(location.href),'_blank','noopener')`;
 }
 
 function renderViewCounter(): void {
