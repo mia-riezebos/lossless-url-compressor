@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
         name: "pisszip-local-api",
         configureServer(server) {
           server.middlewares.use("/api/views", async (_request, response) => {
-            const apiToken = process.env.CF_API_TOKEN ?? env.CF_API_TOKEN;
+            const apiToken = process.env.PISSZIP_ANALYTICS_TOKEN ?? env.PISSZIP_ANALYTICS_TOKEN ?? process.env.CF_API_TOKEN ?? env.CF_API_TOKEN;
             const views = apiToken ? await queryViews(apiToken) : null;
 
             response.statusCode = 200;

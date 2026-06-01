@@ -19,11 +19,13 @@ Deploy with:
 pnpm deploy
 ```
 
-The optional UI view counter reads Cloudflare Analytics through the Worker. Configure a scoped token with zone analytics read access before deploying it:
+The optional UI view counter reads the last 7 days of Cloudflare Analytics through the Worker. Configure a scoped token with zone analytics read access before deploying it:
 
 ```sh
-pnpm dlx wrangler secret put CF_API_TOKEN
+pnpm dlx wrangler secret put PISSZIP_ANALYTICS_TOKEN
 ```
+
+Use `PISSZIP_ANALYTICS_TOKEN` in `.env` for local `pnpm dev`. Avoid `CF_API_TOKEN` for this value because Wrangler treats that name as its own deployment auth token.
 
 ## Spec
 

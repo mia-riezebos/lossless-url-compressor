@@ -4,15 +4,15 @@ import { decodeCanonicalShortUrl, decodeShortUrl, extractPayloadSurface } from "
 
 type Bindings = {
   ASSETS: Fetcher;
-  CF_API_TOKEN?: string;
+  PISSZIP_ANALYTICS_TOKEN?: string;
 };
 
-const VIEW_COUNTER_CACHE_SECONDS = 300;
+const VIEW_COUNTER_CACHE_SECONDS = 60;
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/api/views", async (context) => {
-  return context.json({ views: await readViews(context.env.CF_API_TOKEN, context.req.raw) });
+  return context.json({ views: await readViews(context.env.PISSZIP_ANALYTICS_TOKEN, context.req.raw) });
 });
 
 app.get("*", async (context) => {

@@ -119,7 +119,7 @@ function renderViewCounter(): void {
     .then((response) => response.ok ? response.json() as Promise<{ views: number | null }> : { views: null })
     .then((body) => {
       views.textContent = typeof body.views === "number"
-        ? `visits: ${body.views.toLocaleString()}`
+        ? `visits, last 7 days: ${body.views.toLocaleString()}`
         : "visits: unavailable";
     })
     .catch(() => {
