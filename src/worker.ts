@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { queryViews, shouldCountVisitPath } from "./analytics";
+import { shouldCountVisitPath } from "./analytics";
 import { decodeCanonicalShortUrl, decodeShortUrl, extractPayloadSurface } from "./codec";
 export { ViewCounter } from "./view-counter";
 
@@ -7,7 +7,6 @@ type Bindings = {
   ASSETS: Fetcher;
   VIEW_COUNTER?: DurableObjectNamespace;
   PISSZIP_ANALYTICS_TOKEN?: string;
-  ADMIN_TOKEN?: string;
 };
 
 const COUNTER_URL = "https://view-counter.local";
@@ -16,29 +15,6 @@ const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/api/views", async (context) => {
   return context.json({ views: await readViews(context.env) });
-});
-
-app.post("/api/admin/views/seed", async (context) => {
-  if (!context.env.ADMIN_TOKEN || context.req.header("Authorization") !== `Bearer ${context.env.ADMIN_TOKEN}`) {
-    return context.text("Not found", 404);
-  }
-
-  if (!context.env.PISSZIP_ANALYTICS_TOKEN) {
-    return context.json({ error: "analytics token is not configured" }, 500);
-  }
-
-  const counter = viewCounter(context.env);
-  if (!counter) return context.json({ error: "view counter is not configured" }, 500);
-
-  const previousViews = await readViews(context.env) ?? 0;
-  const analyticsViews = await queryViews(context.env.PISSZIP_ANALYTICS_TOKEN);
-  const views = Math.max(previousViews, analyticsViews);
-
-  const response = await counter.fetch(`${COUNTER_URL}/seed`, {
-    method: "POST",
-    body: JSON.stringify({ views }),
-  });
-  return context.json({ ...await response.json() as { views: number }, previousViews, analyticsViews });
 });
 
 app.get("*", async (context) => {

@@ -24,16 +24,6 @@ export class ViewCounter {
       return json({ ok: true });
     }
 
-    if (request.method === "POST" && pathname === "/seed") {
-      const body = await request.json() as { views?: unknown };
-      const views = body.views;
-      if (typeof views !== "number" || !Number.isSafeInteger(views) || views < 0) return json({ error: "invalid views" }, 400);
-      await this.state.storage.put(COUNTER_KEY, views);
-      await this.state.storage.put(ANALYTICS_SEEDED_AT_KEY, new Date().toISOString());
-      await this.scheduleDump();
-      return json({ views });
-    }
-
     if (request.method === "GET" && pathname === "/read") {
       return json({ views: await this.read() });
     }
