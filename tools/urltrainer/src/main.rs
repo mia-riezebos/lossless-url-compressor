@@ -17,6 +17,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use std::io::{BufRead, BufReader};
 use std::thread;
 use std::time::{Duration, Instant};
 use url_parts::domain_index_to_url;
@@ -50,6 +51,11 @@ fn main() -> Result<(), String> {
         }
         CorpusFormat::CommonCrawlCdxj => {
             cdxj::read_cdxj_lines(&args.dump, |line| {
+                line_sender.send(line).map_err(|err| err.to_string())
+            })?;
+        }
+        CorpusFormat::PlainUrls => {
+            read_plain_url_lines(&args.dump, |line| {
                 line_sender.send(line).map_err(|err| err.to_string())
             })?;
         }
@@ -121,10 +127,40 @@ fn worker(
                     )?;
                 }
             }
+            CorpusFormat::PlainUrls => {
+                let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                stats.seen += 1;
+                if !should_sample(row, &args) {
+                    continue;
+                }
+
+                let url = line.trim();
+                if !url.is_empty() {
+                    add_sampled_url(
+                        url,
+                        row,
+                        &mut stats,
+                        &mut checkpoint_sampled,
+                        &stats_sender,
+                        &args,
+                    )?;
+                }
+            }
         }
     }
 
     stats_sender.send(stats).map_err(|err| err.to_string())
+}
+
+fn read_plain_url_lines<F>(path: &std::path::Path, mut handle: F) -> Result<(), String>
+where
+    F: FnMut(String) -> Result<(), String>,
+{
+    let file = std::fs::File::open(path).map_err(|err| err.to_string())?;
+    for line in BufReader::new(file).lines() {
+        handle(line.map_err(|err| err.to_string())?)?;
+    }
+    Ok(())
 }
 
 fn should_sample(row: u64, args: &Args) -> bool {

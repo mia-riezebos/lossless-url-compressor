@@ -5,6 +5,7 @@ use std::path::PathBuf;
 pub enum CorpusFormat {
     Externallinks,
     CommonCrawlCdxj,
+    PlainUrls,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
