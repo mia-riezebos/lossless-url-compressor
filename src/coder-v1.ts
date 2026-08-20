@@ -1,5 +1,6 @@
 import { CJK_ALPHABET } from "./alphabet";
 import { BitReader, BitWriter } from "./bitstream";
+import { canonicalCodebook } from "./canonical-huffman";
 import {
   ASCII_BASE64URL_CODE,
   ASCII_CJK_CODE,
@@ -55,8 +56,18 @@ import {
   primaryDictionaryValue,
   shareDictionaryValue,
   youtubeVideoPrefix,
+  V2_EXTENDED_DICTIONARY_BITS,
+  V2_ROUTE_SYMBOL,
+  v2ExtendedDictionaryIndex,
+  v2ExtendedDictionaryValue,
+  v2PrimaryDictionaryValue,
 } from "./model";
+import {
+  V2_SYMBOL_CODE_LENGTHS,
+  type V2HeaderModeId,
+} from "./generated/v2-codec-model";
 import { DATETIME_FORMATS, DATE_FORMATS, type DateFormat, type DateTimeFormat, type Token, tokenSymbol } from "./tokenize";
+import { v2HostRoutes, v2RouteAlphabet, v2RouteIdBits } from "./v2-route-model";
 
 const FIRST_LITERAL_SYMBOLS = Array.from({ length: 13 }, (_, index) => index);
 const SECOND_LITERAL_SYMBOLS = Array.from({ length: 15 }, (_, index) => index + 13);
@@ -88,15 +99,32 @@ function symbolRanks(order: number[]): Map<number, number> {
 }
 
 export function encodeTokenStreamV1(tokens: Token[], httpsOmitted: boolean): number[] {
-  return encodeTokenStreamWithRanks(tokens, httpsOmitted, V1_SYMBOL_RANKS);
+  return encodeTokenStreamWithRanks(tokens, V1_SYMBOL_RANKS, httpsOmitted);
 }
 
-function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, ranks: Map<number, number>): number[] {
+export function encodeBodyTokenStreamV2(
+  tokens: Token[],
+  mode: V2HeaderModeId,
+  codeLengths: readonly number[] = V2_SYMBOL_CODE_LENGTHS[mode],
+): number[] {
+  const codebook = canonicalCodebook(codeLengths);
+  return encodeTokenStream(tokens, (writer, symbol) => codebook.write(writer, symbol));
+}
+
+function encodeTokenStreamWithRanks(tokens: Token[], ranks: Map<number, number>, httpsOmitted?: boolean): number[] {
+  return encodeTokenStream(tokens, (writer, symbol) => writeTokenSymbol(writer, symbol, ranks), httpsOmitted);
+}
+
+function encodeTokenStream(
+  tokens: Token[],
+  writeSymbol: (writer: BitWriter, symbol: number) => void,
+  httpsOmitted?: boolean,
+): number[] {
   const writer = new BitWriter();
-  writer.write(httpsOmitted ? 0 : 1, 1);
+  if (httpsOmitted !== undefined) writer.write(httpsOmitted ? 0 : 1, 1);
 
   for (const token of tokens) {
-    writeTokenSymbol(writer, tokenSymbol(token), ranks);
+    writeSymbol(writer, tokenSymbol(token));
 
     if (token.type === "cjk") {
       writeAlphabetRun(writer, ASCII_CJK_CODE, token.value, CJK_ALPHABET);
@@ -113,6 +141,19 @@ function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, rank
       writer.write(ASCII_YOUTUBE_VIDEO_CODE, 7);
       writer.write(token.variant, YOUTUBE_VIDEO_PREFIX_BITS);
       writeAlphabetText(writer, token.id, BASE64URL_ALPHABET);
+      continue;
+    }
+
+    if (token.type === "v2-route") {
+      writer.write(token.id, token.idBits);
+      if (token.suffixAlphabet) {
+        writeAlphabetText(writer, token.suffix, v2RouteAlphabet(token.suffixAlphabet));
+      }
+      continue;
+    }
+
+    if (token.type === "v2-dict" && token.extended) {
+      writer.write(v2ExtendedDictionaryIndex(token.id), V2_EXTENDED_DICTIONARY_BITS);
       continue;
     }
 
@@ -180,28 +221,52 @@ function encodeTokenStreamWithRanks(tokens: Token[], httpsOmitted: boolean, rank
     }
   }
 
-  writeTokenSymbol(writer, END_SYMBOL, ranks);
+  writeSymbol(writer, END_SYMBOL);
   return writer.bits;
 }
 
 export function decodeTokenStreamV1(bits: number[]): { httpsOmitted: boolean; body: string } {
-  return decodeTokenStreamWithOrder(bits, V1_SYMBOL_ORDER);
+  return decodeTokenStreamWithOrder(bits, V1_SYMBOL_ORDER, true);
 }
 
-function decodeTokenStreamWithOrder(bits: number[], order: number[]): { httpsOmitted: boolean; body: string } {
+export function decodeBodyTokenStreamV2(bits: number[], host: string | null, mode: V2HeaderModeId): string {
+  const codebook = canonicalCodebook(V2_SYMBOL_CODE_LENGTHS[mode]);
+  return decodeTokenStream(bits, (reader) => codebook.read(reader), false, host).body;
+}
+
+function decodeTokenStreamWithOrder(
+  bits: number[],
+  order: number[],
+  includeScheme: boolean,
+  v2Host: string | null = null,
+): { httpsOmitted: boolean; body: string } {
+  return decodeTokenStream(bits, (reader) => readTokenSymbol(reader, order), includeScheme, v2Host);
+}
+
+function decodeTokenStream(
+  bits: number[],
+  readSymbol: (reader: BitReader) => number,
+  includeScheme: boolean,
+  v2Host: string | null = null,
+): { httpsOmitted: boolean; body: string } {
   const reader = new BitReader(bits);
-  const httpsOmitted = reader.read(1) === 0;
+  const httpsOmitted = includeScheme && reader.read(1) === 0;
   let body = "";
 
   while (!reader.done) {
-    const symbol = readTokenSymbol(reader, order);
+    const symbol = readSymbol(reader);
 
     if (symbol < LITERAL_ALPHABET.length) {
       body += LITERAL_ALPHABET[symbol];
       continue;
     }
 
-    const dictionary = primaryDictionaryValue(symbol);
+    if (!includeScheme && symbol === V2_ROUTE_SYMBOL) {
+      body += readV2HostRoute(reader, v2Host);
+      continue;
+    }
+
+    const dictionary = includeScheme ? primaryDictionaryValue(symbol) : v2PrimaryDictionaryValue(symbol);
     if (dictionary !== undefined) {
       body += dictionary;
       continue;
@@ -230,7 +295,9 @@ function decodeTokenStreamWithOrder(bits: number[], order: number[]): { httpsOmi
     }
 
     if (symbol === EXT_DICT_SYMBOL) {
-      const extended = extendedDictionaryValue(reader.read(EXTENDED_DICTIONARY_BITS));
+      const extended = includeScheme
+        ? extendedDictionaryValue(reader.read(EXTENDED_DICTIONARY_BITS))
+        : v2ExtendedDictionaryValue(reader.read(V2_EXTENDED_DICTIONARY_BITS));
       if (extended === undefined) throw new Error("Invalid extended dictionary index");
       body += extended;
       continue;
@@ -403,6 +470,19 @@ function readAsciiEscaped(reader: BitReader): string {
   }
 
   return String.fromCharCode(code);
+}
+
+function readV2HostRoute(reader: BitReader, host: string | null): string {
+  const routes = v2HostRoutes(host);
+  if (!routes.length) throw new Error("v2 host-route token requires a selected host header");
+  const route = routes[reader.read(v2RouteIdBits(routes))];
+  if (!route) throw new Error("Invalid v2 host-route index");
+  if (!route.suffix) return route.value;
+  return `${route.value}${readAlphabetText(
+    reader,
+    route.suffix.length,
+    v2RouteAlphabet(route.suffix.alphabet),
+  )}`;
 }
 
 function readHex(reader: BitReader): string {

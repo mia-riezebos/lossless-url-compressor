@@ -1,4 +1,5 @@
 import { CJK_ALPHABET } from "./alphabet";
+import { canonicalCodebook } from "./canonical-huffman";
 import {
   ASCII_SYMBOL,
   ASCII_STRUCTURED_LENGTH_BITS,
@@ -10,11 +11,15 @@ import {
   DATE_YEAR_BITS,
   DATETIME_FORMAT_BITS,
   DICTIONARY,
+  END_SYMBOL,
   EXTENDED_DICTIONARY_BITS,
   HEX_ALPHABET,
   LOWER_HYPHEN_ALPHABET,
   SHARE_DICTIONARY,
   SHARE_DICTIONARY_BITS,
+  V1_SHARE_DICTIONARY_LENGTH,
+  V2_EXTENDED_DICTIONARY_BITS,
+  V2_ROUTE_SYMBOL,
   MAX_NUMBER_LENGTH,
   MAX_REF_LENGTH,
   MAX_REF_OFFSET,
@@ -39,7 +44,16 @@ import {
   dictionarySymbol,
   isExtendedDictionaryId,
   literalSymbol,
+  v2DictionarySymbol,
 } from "./model";
+import {
+  V2_EXTENDED_DICTIONARY,
+  V2_PRIMARY_DICTIONARY,
+  V2_SYMBOL_CODE_LENGTHS,
+  type V2HeaderModeId,
+  type V2RouteAlphabet,
+} from "./generated/v2-codec-model";
+import { v2HostRoutes, v2RouteAlphabet, v2RouteIdBits } from "./v2-route-model";
 
 export const DATE_FORMATS = ["slash", "dash", "compact"] as const;
 export type DateFormat = typeof DATE_FORMATS[number];
@@ -51,8 +65,18 @@ export type Token =
   | { type: "lit"; value: string }
   | { type: "cjk"; value: string; length: number }
   | { type: "dict"; id: number; value: string }
+  | { type: "v2-dict"; id: number; extended: boolean; value: string }
   | { type: "share"; id: number; value: string }
   | { type: "youtube"; variant: number; id: string; value: string }
+  | {
+      type: "v2-route";
+      id: number;
+      idBits: number;
+      prefix: string;
+      suffix: string;
+      suffixAlphabet?: V2RouteAlphabet;
+      value: string;
+    }
   | { type: "num"; value: bigint; length: number }
   | { type: "date"; value: string; format: DateFormat; year: number; month: number; day: number }
   | {
@@ -83,6 +107,15 @@ export type TokenizeOptions = {
   useRoutes?: boolean;
 };
 
+export type TokenizeContext =
+  | { version: "v1" }
+  | {
+      version: "v2";
+      mode: V2HeaderModeId;
+      codeLengths?: readonly number[];
+      header: { kind: "raw" | "host" | "suffix"; value: string | null };
+    };
+
 const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
   useDictionary: true,
   useNumbers: true,
@@ -93,14 +126,34 @@ const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
 
 const MAX_U64 = (1n << 64n) - 1n;
 
-export function tokenize(source: string, options: TokenizeOptions = {}): Token[] {
+export function tokenize(
+  source: string,
+  options: TokenizeOptions = {},
+  context: TokenizeContext = { version: "v1" },
+): Token[] {
   const resolved = { ...DEFAULT_TOKENIZE_OPTIONS, ...options };
   const dictionary = resolved.useDictionary
-    ? (source: string, position: number) => dictionaryAndStructuredMatches(source, position, resolved.useShareDictionary, resolved.useRoutes)
+    ? (source: string, position: number) => dictionaryAndStructuredMatches(
+        source,
+        position,
+        resolved.useShareDictionary,
+        resolved.useRoutes,
+        context,
+      )
     : () => [];
   const numbers = resolved.useNumbers ? numericMatches : () => [];
   const references = resolved.useReferences ? referencesAt : () => [];
-  return tokenizeWithCandidates(source, dictionary, numbers, references);
+  const codebook = context.version === "v2"
+    ? canonicalCodebook(context.codeLengths ?? V2_SYMBOL_CODE_LENGTHS[context.mode])
+    : null;
+  return tokenizeWithCandidates(
+    source,
+    dictionary,
+    numbers,
+    references,
+    codebook ? (token) => codebook.bitLength(tokenSymbol(token)) + tokenPayloadCost(token) : tokenCost,
+    codebook?.bitLength(END_SYMBOL) ?? 6,
+  );
 }
 
 function tokenizeWithCandidates(
@@ -108,17 +161,19 @@ function tokenizeWithCandidates(
   dictionary: (source: string, position: number) => Token[],
   numbers: (source: string, position: number) => Token[],
   references: (source: string, position: number) => Token[],
+  costOf: (token: Token) => number,
+  endCost: number,
 ): Token[] {
   const bestFrom: Array<{ cost: number; tokens: Token[] }> = Array.from({ length: source.length + 1 }, () => ({
     cost: Number.POSITIVE_INFINITY,
     tokens: [],
   }));
-  bestFrom[source.length] = { cost: 6, tokens: [] };
+  bestFrom[source.length] = { cost: endCost, tokens: [] };
 
   for (let position = source.length - 1; position >= 0; position -= 1) {
     for (const candidate of candidatesAt(source, position, dictionary, numbers, references)) {
       const suffix = bestFrom[nextPosition(candidate, position)];
-      const cost = tokenCost(candidate) + suffix.cost;
+      const cost = costOf(candidate) + suffix.cost;
       const previous = bestFrom[position];
 
       if (cost < previous.cost) {
@@ -139,7 +194,14 @@ export function materialize(tokens: Token[], seed = ""): string {
       continue;
     }
 
-    if (token.type === "dict" || token.type === "share" || token.type === "youtube" || token.type === "cjk") {
+    if (
+      token.type === "dict"
+      || token.type === "v2-dict"
+      || token.type === "share"
+      || token.type === "youtube"
+      || token.type === "v2-route"
+      || token.type === "cjk"
+    ) {
       output += token.value;
       continue;
     }
@@ -183,22 +245,33 @@ export function materialize(tokens: Token[], seed = ""): string {
 }
 
 export function tokenCost(token: Token): number {
-  if (token.type === "lit") return literalCost(token.value);
-  if (token.type === "cjk") return asciiStructuredHeaderBits() + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
-  if (token.type === "dict") return isExtendedDictionaryId(token.id) ? 6 + EXTENDED_DICTIONARY_BITS : 6;
-  if (token.type === "share") return asciiStructuredHeaderBits() + SHARE_DICTIONARY_BITS;
-  if (token.type === "youtube") return 6 + 7 + YOUTUBE_VIDEO_PREFIX_BITS + YOUTUBE_VIDEO_ID_LENGTH * 6;
-  if (token.type === "ref") return refCost(token.offset, token.length);
-  if (token.type === "date") return 6 + datePayloadBits();
-  if (token.type === "datetime") return 6 + dateTimePayloadBits(token.format === "iso-ms-z");
-  if (token.type === "u64") return 6 + 6 + U64_BITS;
-  if (token.type === "hex") return asciiStructuredHeaderBits() + 1 + 4 * token.length;
-  if (token.type === "uuid") return 6 + 7 + 1 + 128;
-  if (token.type === "percent") return asciiStructuredHeaderBits() + 1 + 8 * token.length;
-  if (token.type === "base64url") return asciiStructuredHeaderBits() + 6 * token.length;
-  if (token.type === "lower-hyphen") return asciiStructuredHeaderBits() + 5 * token.length;
+  return 6 + tokenPayloadCost(token);
+}
 
-  return 6 + 6 + decimalBitWidth(token.length);
+function tokenPayloadCost(token: Token): number {
+  if (token.type === "lit") return literalPayloadCost(token.value);
+  if (token.type === "cjk") return 7 + ASCII_STRUCTURED_LENGTH_BITS + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
+  if (token.type === "dict") return isExtendedDictionaryId(token.id) ? EXTENDED_DICTIONARY_BITS : 0;
+  if (token.type === "v2-dict") return token.extended ? V2_EXTENDED_DICTIONARY_BITS : 0;
+  if (token.type === "share") return 7 + SHARE_DICTIONARY_BITS;
+  if (token.type === "youtube") return 7 + YOUTUBE_VIDEO_PREFIX_BITS + YOUTUBE_VIDEO_ID_LENGTH * 6;
+  if (token.type === "v2-route") {
+    const suffixBits = token.suffixAlphabet
+      ? token.suffix.length * Math.ceil(Math.log2(v2RouteAlphabet(token.suffixAlphabet).length))
+      : 0;
+    return token.idBits + suffixBits;
+  }
+  if (token.type === "ref") return refPayloadCost(token.offset, token.length);
+  if (token.type === "date") return datePayloadBits();
+  if (token.type === "datetime") return dateTimePayloadBits(token.format === "iso-ms-z");
+  if (token.type === "u64") return 6 + U64_BITS;
+  if (token.type === "hex") return 7 + ASCII_STRUCTURED_LENGTH_BITS + 1 + 4 * token.length;
+  if (token.type === "uuid") return 7 + 1 + 128;
+  if (token.type === "percent") return 7 + ASCII_STRUCTURED_LENGTH_BITS + 1 + 8 * token.length;
+  if (token.type === "base64url") return 7 + ASCII_STRUCTURED_LENGTH_BITS + 6 * token.length;
+  if (token.type === "lower-hyphen") return 7 + ASCII_STRUCTURED_LENGTH_BITS + 5 * token.length;
+
+  return 6 + decimalBitWidth(token.length);
 }
 
 function candidatesAt(
@@ -218,13 +291,61 @@ function candidatesAt(
   return candidates;
 }
 
-function dictionaryAndStructuredMatches(source: string, position: number, useShareDictionary: boolean, useRoutes: boolean): Token[] {
+function dictionaryAndStructuredMatches(
+  source: string,
+  position: number,
+  useShareDictionary: boolean,
+  useRoutes: boolean,
+  context: TokenizeContext,
+): Token[] {
   return [
-    ...dictionaryMatches(source, position),
-    ...(useRoutes ? routeMatches(source, position) : []),
-    ...(useShareDictionary ? shareDictionaryMatches(source, position) : []),
+    ...(context.version === "v2" ? v2DictionaryMatches(source, position) : dictionaryMatches(source, position)),
+    ...(useRoutes && context.version === "v1" ? routeMatches(source, position) : []),
+    ...(useRoutes && context.version === "v2" ? v2RouteMatches(source, position, context) : []),
+    ...(useShareDictionary && context.version === "v1" ? shareDictionaryMatches(source, position) : []),
     ...structuredTextMatches(source, position),
   ];
+}
+
+function v2RouteMatches(
+  source: string,
+  position: number,
+  context: Extract<TokenizeContext, { version: "v2" }>,
+): Token[] {
+  const host = context.header.kind === "host" ? context.header.value : null;
+  const routes = v2HostRoutes(host);
+  const idBits = v2RouteIdBits(routes);
+  const matches: Token[] = [];
+  routes.forEach((route, id) => {
+    if (!source.startsWith(route.value, position)) return;
+    if (!route.suffix) {
+      matches.push({
+        type: "v2-route",
+        id,
+        idBits,
+        prefix: route.value,
+        suffix: "",
+        value: route.value,
+      });
+      return;
+    }
+    const alphabet = v2RouteAlphabet(route.suffix.alphabet);
+    const start = position + route.value.length;
+    const suffix = source.slice(start, start + route.suffix.length);
+    if (suffix.length !== route.suffix.length || [...suffix].some((character) => !alphabet.includes(character))) return;
+    const following = source[start + route.suffix.length];
+    if (following !== undefined && alphabet.includes(following)) return;
+    matches.push({
+      type: "v2-route",
+      id,
+      idBits,
+      prefix: route.value,
+      suffix,
+      suffixAlphabet: route.suffix.alphabet,
+      value: `${route.value}${suffix}`,
+    });
+  });
+  return matches;
 }
 
 function routeMatches(source: string, position: number): Token[] {
@@ -249,10 +370,23 @@ function youtubeVideoMatches(source: string, position: number): Token[] {
 
 function shareDictionaryMatches(source: string, position: number): Token[] {
   const matches: Token[] = [];
-  for (let id = 0; id < SHARE_DICTIONARY.length; id += 1) {
+  for (let id = 0; id < V1_SHARE_DICTIONARY_LENGTH; id += 1) {
     const value = SHARE_DICTIONARY[id];
     if (source.startsWith(value, position)) {
       matches.push({ type: "share", id, value });
+    }
+  }
+  return matches;
+}
+
+function v2DictionaryMatches(source: string, position: number): Token[] {
+  const dictionary = [...V2_PRIMARY_DICTIONARY, ...V2_EXTENDED_DICTIONARY];
+  const primaryLength = V2_PRIMARY_DICTIONARY.length;
+  const matches: Token[] = [];
+  for (let id = 0; id < dictionary.length; id += 1) {
+    const value = dictionary[id];
+    if (source.startsWith(value, position)) {
+      matches.push({ type: "v2-dict", id, extended: id >= primaryLength, value });
     }
   }
   return matches;
@@ -338,13 +472,9 @@ function hexCasing(hex: string): boolean | undefined {
   return hasUpper;
 }
 
-function asciiStructuredHeaderBits(): number {
-  return 6 + 7 + ASCII_STRUCTURED_LENGTH_BITS;
-}
-
-function literalCost(value: string): number {
-  if (literalSymbol(value) !== undefined) return 6;
-  return value.charCodeAt(0) <= 0x7f ? 13 : 13 + UNICODE_CODE_UNIT_BITS;
+function literalPayloadCost(value: string): number {
+  if (literalSymbol(value) !== undefined) return 0;
+  return value.charCodeAt(0) <= 0x7f ? 7 : 7 + UNICODE_CODE_UNIT_BITS;
 }
 
 function dictionaryMatches(source: string, position: number): Token[] {
@@ -362,8 +492,10 @@ function nextPosition(token: Token, position: number): number {
   if (token.type === "lit") return position + token.value.length;
   if (token.type === "cjk") return position + token.value.length;
   if (token.type === "dict") return position + token.value.length;
+  if (token.type === "v2-dict") return position + token.value.length;
   if (token.type === "share") return position + token.value.length;
   if (token.type === "youtube") return position + token.value.length;
+  if (token.type === "v2-route") return position + token.value.length;
   if (
     token.type === "date" ||
     token.type === "datetime" ||
@@ -504,15 +636,15 @@ export function dateTimePayloadBits(hasMilliseconds: boolean): number {
   return datePayloadBits() + DATETIME_FORMAT_BITS - DATE_FORMAT_BITS + TIME_HOUR_BITS + TIME_MINUTE_BITS + TIME_SECOND_BITS + (hasMilliseconds ? TIME_MILLISECOND_BITS : 0);
 }
 
-function refCost(offset: number, length: number): number {
+function refPayloadCost(offset: number, length: number): number {
   const encodedLength = length - MIN_REF_LENGTH;
   if (offset < (1 << REF_SMALL_OFFSET_BITS) && encodedLength < (1 << REF_SMALL_LENGTH_BITS)) {
-    return 6 + 1 + REF_SMALL_OFFSET_BITS + REF_SMALL_LENGTH_BITS;
+    return 1 + REF_SMALL_OFFSET_BITS + REF_SMALL_LENGTH_BITS;
   }
   if (offset < (1 << REF_MEDIUM_OFFSET_BITS) && encodedLength < (1 << REF_MEDIUM_LENGTH_BITS)) {
-    return 6 + 2 + REF_MEDIUM_OFFSET_BITS + REF_MEDIUM_LENGTH_BITS;
+    return 2 + REF_MEDIUM_OFFSET_BITS + REF_MEDIUM_LENGTH_BITS;
   }
-  return 6 + 2 + 12 + 6;
+  return 2 + 12 + 6;
 }
 
 function referencesAt(source: string, position: number): Token[] {
@@ -551,6 +683,8 @@ export function tokenSymbol(token: Token): number {
   if (token.type === "lit") return literalSymbol(token.value) ?? ASCII_SYMBOL;
   if (token.type === "cjk") return ASCII_SYMBOL;
   if (token.type === "dict") return dictionarySymbol(token.id);
+  if (token.type === "v2-dict") return v2DictionarySymbol(token.id);
+  if (token.type === "v2-route") return V2_ROUTE_SYMBOL;
   if (token.type === "share" || token.type === "youtube") return ASCII_SYMBOL;
   if (token.type === "num" || token.type === "date" || token.type === "datetime" || token.type === "u64") return NUMBER_SYMBOL;
   if (

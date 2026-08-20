@@ -1,15 +1,17 @@
-import { ASCII_CLIENT_ALPHABET, ASCII_SERVER_ALPHABET, CJK_ALPHABET, hasClientFragment, isAsciiSafePayload, isCjkPayload } from "./alphabet";
-import { decodeTokenStream, encodeTokenStream } from "./coder";
+import { ASCII_CLIENT_ALPHABET, ASCII_SERVER_ALPHABET, CJK_ALPHABET, CJK_CLIENT_ALPHABET, hasClientFragment, isAsciiSafePayload, isCjkPayload } from "./alphabet";
 import { decodeTokenStreamV1, encodeTokenStreamV1 } from "./coder-v1";
+import type { V2HeaderModeId } from "./generated/v2-codec-model";
 import { normalizeForCompression } from "./normalize";
-import { decodeBits, decodeTerminatedBits, encodeBits, encodeTerminatedBits } from "./radix";
+import { decodeTerminatedBits, encodeTerminatedBits } from "./radix";
 import { type TokenizeOptions, tokenize } from "./tokenize";
+import { decodeV2Payload, encodeV2Payload, type V2HeaderSelection } from "./v2-codec";
 
-export const VERSION = "1";
-export const DEFAULT_ORIGIN = "https://l.mia.cx";
+export const VERSION = "2";
+export const DEFAULT_ORIGIN = "http://piss.zip";
+export const V2_WIRE_VERSION = 0;
 const CLIENT_PAYLOAD_PREFIX = "#";
 
-export type CodecVersion = "0" | "1";
+export type CodecVersion = "1" | "2";
 
 export type EncodeOptions = {
   allowFragment?: boolean;
@@ -21,11 +23,13 @@ export type EncodeOptions = {
 
 export type EncodeResult = {
   version: CodecVersion;
+  wireVersion: number | null;
   normalizedUrl: string;
   payload: string;
   shortUrl: string;
   carrier: "server-safe" | "client-max";
   payloadFamily: "ascii-safe" | "unicode-cjk";
+  header: V2HeaderSelection | null;
   stats: {
     normalizedLength: number;
     payloadLength: number;
@@ -36,27 +40,36 @@ export type EncodeResult = {
 export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeResult {
   const normalized = normalizeForCompression(input);
   const version = options.version ?? VERSION;
-  const tokens = tokenize(
-    normalized.body,
-    version === "0" ? { ...options.tokenizer, useRoutes: false, useShareDictionary: false } : options.tokenizer,
-  );
-  const bits = encodeBitsForVersion(tokens, normalized.httpsOmitted, version);
   const allowFragment = Boolean(options.allowFragment);
-  const origin = trimTrailingSlashes(options.origin ?? DEFAULT_ORIGIN);
-  const serverAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_SERVER_ALPHABET;
-  const clientAlphabet = options.useCjkPayload ? CJK_ALPHABET : ASCII_CLIENT_ALPHABET;
-  const serverPayload = version === "0" ? encodeBits(bits, serverAlphabet) : encodeTerminatedBits(bits, serverAlphabet);
-  const clientPayload = `${CLIENT_PAYLOAD_PREFIX}${version === "0" ? encodeBits(bits, clientAlphabet) : encodeTerminatedBits(bits, clientAlphabet)}`;
-  const payload = allowFragment ? clientPayload : serverPayload;
-  const shortUrl = `${origin}/${version}/${payload}`;
+  const origin = outputOrigin(options.origin ?? DEFAULT_ORIGIN, version);
+  const useCjkPayload = Boolean(options.useCjkPayload);
+  const alphabet = encodingAlphabet(useCjkPayload, allowFragment, version);
+  const v2 = version === "2"
+    ? encodeV2Payload(normalized, alphabet, v2Mode(useCjkPayload, allowFragment), options.tokenizer)
+    : null;
+  const encodedBody = v2?.payload ?? encodeV1Payload(
+    normalized.body,
+    normalized.httpsOmitted,
+    alphabet,
+    useCjkPayload,
+    options.tokenizer,
+  );
+  const payload = allowFragment ? `${CLIENT_PAYLOAD_PREFIX}${encodedBody}` : encodedBody;
+  const shortUrl = version === "1"
+    ? `${origin}/1/${payload}`
+    : allowFragment
+      ? `${origin}${payload}`
+      : `${origin}/${payload}`;
 
   return {
     version,
+    wireVersion: version === "2" ? V2_WIRE_VERSION : null,
     normalizedUrl: normalized.normalizedUrl,
     payload,
     shortUrl,
     carrier: hasClientFragment(payload) ? "client-max" : "server-safe",
     payloadFamily: options.useCjkPayload ? "unicode-cjk" : "ascii-safe",
+    header: v2?.header ?? null,
     stats: {
       normalizedLength: normalized.normalizedUrl.length,
       payloadLength: payload.length,
@@ -65,25 +78,17 @@ export function encodeUrl(input: string, options: EncodeOptions = {}): EncodeRes
   };
 }
 
-function encodeBitsForVersion(tokens: ReturnType<typeof tokenize>, httpsOmitted: boolean, version: CodecVersion): number[] {
-  return version === "0" ? encodeTokenStream(tokens, httpsOmitted) : encodeTokenStreamV1(tokens, httpsOmitted);
-}
-
 export function decodeUrlPayload(payload: string, version: CodecVersion = VERSION): string {
   const surface = decodePayloadSurface(payload);
   const clientMax = surface.startsWith(CLIENT_PAYLOAD_PREFIX);
   const payloadBody = clientMax ? surface.slice(CLIENT_PAYLOAD_PREFIX.length) : surface;
-  const alphabet = payloadAlphabet(surface, clientMax);
-  if (!["0", "1"].includes(version)) throw new Error(`Unsupported payload version: ${version}`);
-
-  const bits = version === "0" ? decodeBits(payloadBody, alphabet) : decodeTerminatedBits(payloadBody, alphabet);
-  const decoded = decodeBitsForVersion(bits, version);
+  const alphabet = payloadAlphabet(surface, clientMax, version);
+  if (version === "2") {
+    return decodeV2Payload(payloadBody, alphabet, v2Mode(isCjkPayload(surface), clientMax));
+  }
+  const decoded = decodeTokenStreamV1(decodeTerminatedBits(payloadBody, alphabet));
 
   return decoded.httpsOmitted ? `https://${decoded.body}` : decoded.body;
-}
-
-function decodeBitsForVersion(bits: number[], version: CodecVersion): { httpsOmitted: boolean; body: string } {
-  return version === "0" ? decodeTokenStream(bits) : decodeTokenStreamV1(bits);
 }
 
 export function decodeShortUrl(shortUrlOrPayload: string): string {
@@ -98,10 +103,10 @@ export function decodeCanonicalShortUrl(shortUrlOrPayload: string): string {
   const canonical = encodeUrl(decoded, {
     allowFragment: hasClientFragment(surface),
     useCjkPayload: isCjkPayload(surface),
-    version: VERSION,
+    version: parsed.version,
   });
 
-  if (parsed.version !== VERSION || surface !== canonical.payload) {
+  if (surface !== canonical.payload) {
     throw new Error("Non-canonical short URL payload");
   }
 
@@ -117,12 +122,20 @@ export function extractPayloadVersion(shortUrlOrPayload: string): CodecVersion {
 }
 
 function parsePayloadSurface(shortUrlOrPayload: string): { version: CodecVersion; payload: string } {
-  const match = /\/([01])\//.exec(shortUrlOrPayload);
-  if (!match) return { version: VERSION, payload: shortUrlOrPayload };
+  const legacy = /^[a-z][a-z\d+.-]*:\/\/[^/?#]+\/1\//i.exec(shortUrlOrPayload);
+  if (legacy) {
+    return {
+      version: "1",
+      payload: shortUrlOrPayload.slice(legacy[0].length),
+    };
+  }
+
+  const fullUrl = /^([a-z][a-z\d+.-]*:\/\/[^/?#]+)([\/#])([\s\S]*)$/i.exec(shortUrlOrPayload);
+  if (!fullUrl) return { version: VERSION, payload: shortUrlOrPayload };
 
   return {
-    version: match[1] as CodecVersion,
-    payload: shortUrlOrPayload.slice(match.index + match[0].length),
+    version: VERSION,
+    payload: fullUrl[2] === "#" ? `#${fullUrl[3]}` : fullUrl[3],
   };
 }
 
@@ -136,12 +149,44 @@ function decodePayloadSurface(payload: string): string {
   }
 }
 
-function payloadAlphabet(surface: string, clientMax: boolean): string {
+function encodingAlphabet(useCjkPayload: boolean, clientMax: boolean, version: CodecVersion): string {
+  if (!useCjkPayload) return clientMax ? ASCII_CLIENT_ALPHABET : ASCII_SERVER_ALPHABET;
+  return version === "2" && clientMax ? CJK_CLIENT_ALPHABET : CJK_ALPHABET;
+}
+
+function payloadAlphabet(surface: string, clientMax: boolean, version: CodecVersion): string {
   if (isAsciiSafePayload(surface)) return clientMax ? ASCII_CLIENT_ALPHABET : ASCII_SERVER_ALPHABET;
-  if (isCjkPayload(surface)) return CJK_ALPHABET;
+  if (isCjkPayload(surface)) return version === "2" && clientMax ? CJK_CLIENT_ALPHABET : CJK_ALPHABET;
   throw new Error("Payload selects an unsupported Unicode codec");
 }
 
-function trimTrailingSlashes(value: string): string {
-  return value.replace(/\/+$/, "");
+function ensureDetectablePayloadFamily(payload: string, alphabet: string, useCjkPayload: boolean): string {
+  if (useCjkPayload && ![...payload].some((char) => char.charCodeAt(0) > 0x7f)) {
+    // A CJK+fragment integer can theoretically encode entirely as `#` digits,
+    // which would otherwise be indistinguishable from the ASCII family.
+    return `${alphabet[0]}${payload}`;
+  }
+  return payload;
+}
+
+function encodeV1Payload(
+  body: string,
+  httpsOmitted: boolean,
+  alphabet: string,
+  useCjkPayload: boolean,
+  tokenizerOptions: TokenizeOptions | undefined,
+): string {
+  const tokens = tokenize(body, tokenizerOptions, { version: "v1" });
+  const encoded = encodeTerminatedBits(encodeTokenStreamV1(tokens, httpsOmitted), alphabet);
+  return ensureDetectablePayloadFamily(encoded, alphabet, useCjkPayload);
+}
+
+function v2Mode(useCjkPayload: boolean, clientMax: boolean): V2HeaderModeId {
+  if (useCjkPayload) return clientMax ? "cjk-fragment" : "cjk";
+  return clientMax ? "ascii-fragment" : "ascii";
+}
+
+function outputOrigin(value: string, version: CodecVersion): string {
+  const origin = value.replace(/\/+$/, "");
+  return version === "2" ? origin.replace(/^https:/i, "http:") : origin;
 }
