@@ -19,8 +19,8 @@
         <h1>Lossless URL Compressor</h1>
         <p id="views" aria-live="polite" title="A basic counter using Cloudflare Durable Objects. Actual visited paths and decoded URLs are not stored.">visits: loading…</p>
       </div>
-      <p>A URL-aware LZ-style encoder: it tokenizes common URL structure with a dictionary derived from Common Crawl indexes, packs numbers/dates/IDs, then back-references repeated text.</p>
-      <p>Inspired by <a href="https://x.com/yanorei32/status/2059594850694283362">yanorei32</a>. <a href="https://github.com/mia-riezebos/lossless-url-compressor">GitHub</a>.</p>
+      <p>A URL-aware encoder: it packs real URL grammar into a compact header, tokenizes common patterns, packs numbers and IDs, LZ-back-references repeated text, then Huffman-codes the result. Trained on over 467 million URL observations from Common Crawl, Discord Unveiled, DISCO, Telegram Group-verse, TGDataset, and WhatsApp Public Groups.</p>
+      <p>Inspired by <a href="https://x.com/yanorei32/status/2059594850694283362">yanorei32</a> and <a href="https://youtu.be/TOr1Vvji6jA">PortalRunner</a>. <a href="https://github.com/mia-riezebos/lossless-url-compressor">GitHub</a>.</p>
 
       <label>
         Input URL <a id="input-visit" href="https://youtube.com/watch?v=dQw4w9WgXcQ">(visit)</a>
