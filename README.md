@@ -1,6 +1,6 @@
 # Lossless URL Compressor
 
-WIP spec plus TypeScript proof of concept for a stateless, deterministic, lossless URL compressor for `https://piss.zip/`.
+WIP spec plus TypeScript proof of concept for a stateless, deterministic, lossless URL compressor for `http://piss.zip/`.
 
 ## Run
 
@@ -37,14 +37,18 @@ Start with [`SPEC.md`](./SPEC.md).
 - TypeScript codec in `src/codec.ts`.
 - Manual scheme/host normalization in `src/normalize.ts`; no `URL` parser.
 - Unicode input URLs are supported; payloads are ASCII-safe by default with optional CJK Unicode output for fewer visible chars.
-- Optional leading `#` payload when fragment/client-max mode is enabled.
+- v2 server links use `http://piss.zip/<payload>`; fragment/client-max links use `http://piss.zip#<payload>` and therefore avoid a redundant root slash.
 - Hono Worker in `src/worker.ts` redirects only canonical server-visible payloads to the decoded URL; valid non-canonical payloads serve the UI for local inspection instead of redirecting.
-- `/1/` is the current headerless radix format with a static prefix code for token symbols. `/0/` payloads still decode in the raw codec for compatibility, but the public redirect path treats them as non-canonical and serves the UI.
+- v2 uses a trained, self-delimiting 1/2/3-character host header followed by an independently radix-packed body. The body starts with unary wire version `0`; future incompatible bodies use `10`, `110`, and so on without consuming a dedicated visible version character.
+- Deployed `/1/<payload>` links are the single route-level compatibility exception and continue to use the original v1 alphabet and decoder unchanged.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
   - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, curated sharing-site routes, numeric runs, and LZ refs
-  - `model.ts`: generated literal alphabet + dictionaries plus v1-only sharing-route dictionary
-  - `coder.ts`: token stream to bits
+  - `generated/v2-codec-model.ts`: frozen four-mode host/suffix tables and trained v2 payload terms
+  - `v2-codec.ts`: variable-length header selection, structural fields, body framing, and reconstruction
+  - `model.ts`: v1 dictionaries plus the separately gated v2 payload-term tail
+  - `coder-v1.ts`: shared token grammar with distinct v1 scheme framing and v2 body-only framing
+  - `wire-version.ts`: prefix-free unary v2 wire framing
   - `radix.ts`: bits to URL-observable alphabet
   - `codec.ts`: glue
 
@@ -80,3 +84,12 @@ python3 scripts/write-trained-model.py data/wiki/simplewiki-rust-analysis.md --o
 ```
 
 Older Python analyzer/trainer scripts are kept for comparison, but the Rust tool is the iteration path.
+
+For v2 corpus work, add `--raw-stats data/.../training-cube.jsonl.gz` to the Rust scan, then run `pnpm train:reports -- --cubes <comma-separated cubes> --out-dir data/training/reports`. The package command invokes the Rust trainer's streaming `report` mode. It emits reweightable machine-readable results plus header shortlists for all four ASCII/CJK and server/fragment modes, common-symbol analysis, and cross-dataset comparisons. See `tools/urltrainer/README.md` for the schema and weighting options.
+
+After choosing weights, freeze a stripped runtime model from the reports with `pnpm train:codec:model`. The generated artifact records a SHA-256 content hash and removes analytical counts/context breakdowns; reordering any entry is a wire-format change.
+
+Detailed v2 design documents:
+
+- [v2 training and model selection](docs/v2-training.md)
+- [v2 variable-length header format](docs/v2-header-format.md)
