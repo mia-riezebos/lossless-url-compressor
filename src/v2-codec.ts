@@ -101,7 +101,7 @@ export function encodeV2Payload(
       const body = encodeTerminatedBits(bodyBits, alphabet);
       const header = encodeHeader(table, alphabet, hostVariant.location, structure);
       const rawPayload = `${header}${body}`;
-      const payload = escapeReservedRoute(rawPayload, table, alphabet, modeId);
+      const payload = escapeUnsafePathSurface(rawPayload, table, alphabet, modeId);
       candidates.push({
         payload,
         headerCharacters: [...header].length,
@@ -274,13 +274,12 @@ function decodeHeader(payload: string, table: GeneratedHeaderTable, alphabet: st
     if (offset >= digits.length) throw new Error("Truncated generic v2 header escape");
     first = digitIndex(digits[offset], alphabet);
   }
-  const index = headerIndex(table);
   if (first < table.tier1LeadStates) {
     const selector = Math.floor(first / V2_STRUCTURAL_STATES);
     const structure = first % V2_STRUCTURAL_STATES;
     return {
       consumed: offset + 1,
-      location: selector === 0 ? null : locationAt(table, index, 1, selector - 1),
+      location: selector === 0 ? null : locationAt(table, 1, selector - 1),
       structure: checkedStructure(structure),
     };
   }
@@ -292,7 +291,7 @@ function decodeHeader(payload: string, table: GeneratedHeaderTable, alphabet: st
     const entry = Math.floor(packed / V2_STRUCTURAL_STATES);
     return {
       consumed: offset + 2,
-      location: locationAt(table, index, 2, entry),
+      location: locationAt(table, 2, entry),
       structure: checkedStructure(packed % V2_STRUCTURAL_STATES),
     };
   }
@@ -304,7 +303,7 @@ function decodeHeader(payload: string, table: GeneratedHeaderTable, alphabet: st
     const entry = Math.floor(packed / V2_STRUCTURAL_STATES);
     return {
       consumed: offset + 3,
-      location: locationAt(table, index, 3, entry),
+      location: locationAt(table, 3, entry),
       structure: checkedStructure(packed % V2_STRUCTURAL_STATES),
     };
   }
@@ -330,7 +329,6 @@ function restoreUrl(residual: string, entry: HeaderEntry | null, structure: numb
   }
 
   if ((structure & 0b10) !== 0) {
-    if (authority.startsWith("www.")) throw new Error("Duplicate www v2 header state");
     authority = `www.${authority}`;
   }
   const fileCode = structure >> 2;
@@ -369,18 +367,15 @@ function headerIndex(table: GeneratedHeaderTable): HeaderIndex {
 
 function locationAt(
   table: GeneratedHeaderTable,
-  index: HeaderIndex,
   tier: 1 | 2 | 3,
   entryIndex: number,
 ): HeaderLocation {
   const encoded = table[`tier${tier}`][entryIndex];
   if (!encoded) throw new Error(`Unused v2 tier-${tier} packed state: ${entryIndex}`);
-  const entry = decodeGeneratedEntry(encoded);
-  const location = (entry.kind === "host" ? index.hosts : index.suffixes).get(entry.value);
-  if (!location || location.tier !== tier || location.index !== entryIndex) {
-    throw new Error("v2 header table index mismatch");
-  }
-  return location;
+  const order = entryIndex
+    + (tier >= 2 ? table.tier1.length : 0)
+    + (tier >= 3 ? table.tier2.length : 0);
+  return { tier, index: entryIndex, entry: decodeGeneratedEntry(encoded), order };
 }
 
 function decodeGeneratedEntry(encoded: GeneratedHeaderEntry): HeaderEntry {
@@ -420,13 +415,17 @@ function requiredDigit(digits: string[], index: number): string {
   return digit;
 }
 
-function escapeReservedRoute(
+function escapeUnsafePathSurface(
   payload: string,
   table: GeneratedHeaderTable,
   alphabet: string,
   modeId: V2HeaderModeId,
 ): string {
-  if (modeId !== "ascii" || !RESERVED_ROUTE_PREFIXES.some((prefix) => payload.startsWith(prefix))) {
+  const pathSurface = payload.split("?", 1)[0];
+  const hasDotSegment = pathSurface.split("/").some((segment) => segment === "." || segment === "..");
+  const requiresQueryCarrier = RESERVED_ROUTE_PREFIXES.some((prefix) => payload.startsWith(prefix))
+    || hasDotSegment;
+  if (modeId !== "ascii" || !requiresQueryCarrier) {
     return payload;
   }
   return `${alphabet[table.base - 1]}${payload}`;

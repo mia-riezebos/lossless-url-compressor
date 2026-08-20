@@ -61,6 +61,30 @@ describe("trained v2 header codec", () => {
     }
   });
 
+  it("treats only the first www label as structural", () => {
+    const source = "https://www.www.example.com/a";
+
+    for (const options of [
+      { allowFragment: false, useCjkPayload: false },
+      { allowFragment: true, useCjkPayload: false },
+      { allowFragment: false, useCjkPayload: true },
+      { allowFragment: true, useCjkPayload: true },
+    ]) {
+      const encoded = encodeUrl(source, options);
+      expect(decodeUrlPayload(encoded.payload)).toBe(source);
+    }
+  });
+
+  it("moves ASCII payloads with dot path segments onto a normalization-safe carrier", () => {
+    const source = "https://example4217.com/0.dh4qysyoexb0.dh4qysyoexb4217";
+    const encoded = encodeUrl(source, { origin: "http://piss.zip" });
+    const browserUrl = new Request(encoded.shortUrl).url;
+
+    expect(encoded.payload.startsWith("?")).toBe(true);
+    expect(browserUrl).toBe(encoded.shortUrl);
+    expect(decodeShortUrl(browserUrl)).toBe(source);
+  });
+
   it("uses the frozen compact com/net/org selector order", () => {
     const com = encodeUrl("https://example.com/articles");
     const orgFile = encodeUrl("http://www.example.org/docs/index.php?q=1");
