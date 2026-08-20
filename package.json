@@ -14,11 +14,11 @@
     "train:headers:optimize": "tsx scripts/optimize-header-tables.ts",
     "train:messaging:shards": "tsx scripts/run-messaging-shards.ts",
     "train:reports": "cargo run --release --manifest-path tools/urltrainer/Cargo.toml -- report",
-    "train:tokenizer:base": "tsx scripts/train-v2-tokenizer.ts data/training/full-2026-08-18/reports && tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports",
+    "train:tokenizer:base": "tsx scripts/train-v2-tokenizer.ts data/training/full-2026-08-18/reports && tsx scripts/train-v2-subwords.ts data/training/full-2026-08-18/reports && tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports",
     "train:tokenizer": "pnpm train:tokenizer:base && pnpm train:tokenizer:huffman",
     "train:tokenizer:huffman": "tsx scripts/train-v2-huffman.ts data/training/full-2026-08-18/reports && tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports",
     "train:tokenizer:benchmark": "tsx scripts/benchmark-v2-tokenizer.ts data/training/full-2026-08-18/reports",
-    "train:codec:model": "tsx scripts/generate-v2-codec-model.ts"
+    "train:codec:model": "tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports"
   },
   "keywords": [],
   "author": "",

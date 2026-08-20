@@ -11,10 +11,13 @@ import {
 } from "./codec";
 import {
   V2_CODEC_MODEL_HASH,
+  V2_EXTENDED_DICTIONARY,
   V2_HEADER_TABLES,
   V2_HOST_ROUTE_TABLES,
   V2_PAYLOAD_DICTIONARY,
+  V2_PRIMARY_DICTIONARY,
 } from "./generated/v2-codec-model";
+import { decodeBodyTokenStreamV2, encodeBodyTokenStreamV2 } from "./coder-v1";
 
 describe("trained v2 header codec", () => {
   const sources = [
@@ -76,7 +79,7 @@ describe("trained v2 header codec", () => {
   });
 
   it("moves ASCII payloads with dot path segments onto a normalization-safe carrier", () => {
-    const source = "https://example4217.com/0.dh4qysyoexb0.dh4qysyoexb4217";
+    const source = "https://example11928.com/0.dh4qysyoexb0.dh4qysyoexb11928";
     const encoded = encodeUrl(source, { origin: "http://piss.zip" });
     const browserUrl = new Request(encoded.shortUrl).url;
 
@@ -99,7 +102,7 @@ describe("trained v2 header codec", () => {
 
   it("uses two- and three-character ASCII headers and one-character CJK headers", () => {
     const youtubeAscii = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ");
-    const discordAscii = encodeUrl("https://discord.com/channels/1/2");
+    const discordAscii = encodeUrl("https://discord.com/xqzv/918273");
     const youtubeCjk = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { useCjkPayload: true });
 
     expect(youtubeAscii.header).toMatchObject({ characters: 2, selector: "host", value: "youtube.com" });
@@ -122,6 +125,31 @@ describe("trained v2 header codec", () => {
       suffix: { alphabet: "base64url", length: 11 },
     });
     expect(trained.stats.payloadLength).toBeLessThan(literals.stats.payloadLength);
+  });
+
+  it("segments URL text with nested learned subwords when that minimizes encoded cost", () => {
+    expect(V2_EXTENDED_DICTIONARY).toEqual(expect.arrayContaining(["ation", "ication", "search", "earch"]));
+    const source = "https://google.com/search/material/communication/selection?comparison=information";
+    const trained = encodeUrl(source);
+    const withoutSubwords = encodeUrl(source, {
+      tokenizer: { useDictionary: false, useRoutes: false, useShareDictionary: false },
+    });
+
+    expect(decodeUrlPayload(trained.payload)).toBe(source);
+    expect(trained.stats.payloadLength).toBeLessThan(withoutSubwords.stats.payloadLength);
+  });
+
+  it("roundtrips every tier of the extended subword index", () => {
+    const indices = [0, 63, 64, 1_087, 1_088, V2_EXTENDED_DICTIONARY.length - 1];
+    const tokens = indices.map((index) => ({
+      type: "v2-dict" as const,
+      id: V2_PRIMARY_DICTIONARY.length + index,
+      extended: true,
+      value: V2_EXTENDED_DICTIONARY[index],
+    }));
+    const expected = tokens.map(({ value }) => value).join("");
+
+    expect(decodeBodyTokenStreamV2(encodeBodyTokenStreamV2(tokens, "ascii"), null, "ascii")).toBe(expected);
   });
 
   it("beats v1 on the representative YouTube URL after accounting for the complete short URL", () => {

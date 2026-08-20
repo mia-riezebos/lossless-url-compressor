@@ -43,7 +43,7 @@ Start with [`SPEC.md`](./SPEC.md).
 - Deployed `/1/<payload>` links are the single route-level compatibility exception and continue to use the original v1 alphabet and decoder unchanged.
 - Trained compression pipeline:
   - `normalize.ts`: scheme/host normalization + HTTPS omission
-  - `tokenize.ts`: optimal parse into literals, trained dictionary phrases, curated sharing-site routes, numeric runs, and LZ refs
+  - `tokenize.ts`: minimum-bit parse into literals, trained URL segments/subwords, curated sharing-site routes, numeric runs, and LZ refs
   - `generated/v2-codec-model.ts`: frozen four-mode host/suffix tables and trained v2 payload terms
   - `v2-codec.ts`: variable-length header selection, structural fields, body framing, and reconstruction
   - `model.ts`: v1 dictionaries plus the separately gated v2 payload-term tail

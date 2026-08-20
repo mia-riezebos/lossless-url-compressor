@@ -273,13 +273,17 @@ For each URL and output mode, residual training:
 
 The tokenizer interface receives the v2 carrier mode and `{ kind, value }` header selection, so a generated model can distinguish universal tokens from grammars conditioned on `youtube.com`, `x.com`, `wikipedia.org`, `reddit.com`, or any later selected header without leaking that decision into ordinary codec callers.
 
-`pnpm train:tokenizer` selects 44 redundancy-aware universal residual terms, up to 64 header-selected hosts, and up to eight routes per host. Calibration tails identify fixed decimal, hexadecimal, base64url, and lower-hyphen suffix shapes only when at least 80% of five or more observations agree. The generated runtime model contains ten direct dictionary symbols, 34 extended entries, host-conditioned route tables, and one canonical length-limited Huffman table per carrier mode. The four carrier alphabets remain fixed codec inputs.
+`pnpm train:tokenizer` selects 44 redundancy-aware universal residual terms, up to 64 header-selected hosts, and up to eight routes per host. It also mines 4,096 nested URL subwords from alphabetic runs inside real path segments, query names, query values, and fragments. The subword corpus uses only weighted URL observations in calibration buckets 0–69; it does not ingest message prose or a general-language corpus.
 
-Huffman training uses exact token costs rather than merely reordering symbols. It tokenizes and selects headers, measures the resulting weighted symbol stream, constructs an optimal complete prefix code with a ten-bit maximum, then repeats with the new costs until every mode stabilizes. The current run converges in four iterations. Encoder and decoder store only the canonical code lengths in the frozen model; individual URLs contain no tree description.
+The runtime tokenizer considers exact routes, full segments, subwords, literals, structured values, and LZ references at every position. Dynamic programming chooses the complete token path with the lowest encoded bit cost rather than greedily selecting the longest match. Ten universal terms remain direct symbols. Extended exact terms and subwords share tiered indices: the first 64 cost seven payload bits, the next 1,024 cost twelve, and the remaining entries cost fourteen, in addition to their Huffman-coded extended-token symbol.
+
+Calibration tails identify fixed decimal, hexadecimal, base64url, and lower-hyphen suffix shapes only when at least 80% of five or more observations agree. The generated runtime model contains the dictionaries, nested subword vocabulary, host-conditioned route tables, and one canonical length-limited Huffman table per carrier mode. The four carrier alphabets remain fixed codec inputs.
+
+Huffman training uses exact token costs rather than merely reordering symbols. It tokenizes and selects headers, measures the resulting weighted symbol stream, constructs an optimal complete prefix code with a ten-bit maximum, then repeats with the new costs until every mode stabilizes. The current run converges in five iterations. Encoder and decoder store only the canonical code lengths in the frozen model; individual URLs contain no tree description.
 
 Held-out URLs are deterministically partitioned by target URL and dataset: hash buckets 0–69 calibrate route shapes and Huffman lengths, 70–84 are reserved for model validation, and 85–99 form the evaluation set. This prevents direct structured-suffix inference or code-length fitting on evaluation records. The aggregate cubes were produced before this partition and contain corpus-wide counts, however, so this is token-level isolation rather than a fully corpus-isolated or out-of-distribution benchmark. A final freeze still needs different crawl shards or time-separated corpora.
 
-`pnpm train:tokenizer:benchmark` runs the real v1 and v2 codecs on evaluation buckets 85–99 with report dataset/context weights. The current 2,461 non-zero-weight URLs report average complete-short-URL reductions of 11.58% for ASCII, 13.31% for ASCII+fragment, 12.26% for CJK, and 14.80% for CJK+fragment. Against the prior fixed 5/6/7-bit tiered symbol code, Huffman alone saves 1.545, 1.555, 0.575, and 0.575 characters respectively. The machine-readable result is `tokenizer-benchmark.json`; the compact table is `tokenizer-benchmark.md`.
+`pnpm train:tokenizer:benchmark` runs the real v1 and v2 codecs on evaluation buckets 85–99 with report dataset/context weights. The current 2,461 non-zero-weight URLs report average complete-short-URL reductions of 14.33% for ASCII, 15.96% for ASCII+fragment, 14.11% for CJK, and 16.60% for CJK+fragment. The machine-readable result is `tokenizer-benchmark.json`; the compact table is `tokenizer-benchmark.md`.
 
 ## Reports
 
@@ -291,7 +295,7 @@ Held-out URLs are deterministically partitioned by target URL and dataset: hash 
 - `host-patterns.json` and `.md`: per-host path/query coverage and token alternatives;
 - `source-comparison.json` and `.md`: Common Crawl, Discord, Telegram, WhatsApp, and individual dataset comparisons.
 - `hosts.jsonl`: every observed host with aggregate raw and weighted counts only, intentionally omitting dataset/context splits.
-- `tokenizer-model.json`: selected residual dictionaries and header-conditioned routes, including learned fixed suffix shapes.
+- `tokenizer-model.json`: selected residual dictionaries, nested URL subwords, and header-conditioned routes, including learned fixed suffix shapes.
 - `tokenizer-benchmark.json` and `.md`: weighted held-out v1/v2 comparisons for all four carrier modes.
 
 Markdown is deliberately capped for humans. JSON contains complete evaluated shortlists. The aggregate cube remains the source of truth when a report cap is insufficient.
@@ -339,7 +343,7 @@ A frozen v2 model should record:
 
 Generated encoder tables and decoder tables must be committed together. A table reorder is a wire-format change even when the set of strings is unchanged.
 
-`pnpm train:codec:model` performs this freeze step for the current draft. It removes report-only dimensions, canonicalizes the fixed `.com`/`.net`/`.org` order, deduplicates identical mode arrays, includes the top 44 header-aware payload terms, and embeds a SHA-256 content hash.
+`pnpm train:codec:model` performs this freeze step for the current draft. It removes report-only dimensions, canonicalizes the fixed `.com`/`.net`/`.org` order, deduplicates identical mode arrays, includes the header-aware exact terms and trained URL-subword vocabulary, and embeds a SHA-256 content hash.
 
 ## Known gaps before freezing v2
 

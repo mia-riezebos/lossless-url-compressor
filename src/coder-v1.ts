@@ -56,7 +56,11 @@ import {
   primaryDictionaryValue,
   shareDictionaryValue,
   youtubeVideoPrefix,
-  V2_EXTENDED_DICTIONARY_BITS,
+  V2_EXTENDED_LONG_BITS,
+  V2_EXTENDED_MEDIUM_BITS,
+  V2_EXTENDED_MEDIUM_COUNT,
+  V2_EXTENDED_SHORT_BITS,
+  V2_EXTENDED_SHORT_COUNT,
   V2_ROUTE_SYMBOL,
   v2ExtendedDictionaryIndex,
   v2ExtendedDictionaryValue,
@@ -153,7 +157,7 @@ function encodeTokenStream(
     }
 
     if (token.type === "v2-dict" && token.extended) {
-      writer.write(v2ExtendedDictionaryIndex(token.id), V2_EXTENDED_DICTIONARY_BITS);
+      writeV2ExtendedDictionaryIndex(writer, v2ExtendedDictionaryIndex(token.id));
       continue;
     }
 
@@ -297,7 +301,7 @@ function decodeTokenStream(
     if (symbol === EXT_DICT_SYMBOL) {
       const extended = includeScheme
         ? extendedDictionaryValue(reader.read(EXTENDED_DICTIONARY_BITS))
-        : v2ExtendedDictionaryValue(reader.read(V2_EXTENDED_DICTIONARY_BITS));
+        : v2ExtendedDictionaryValue(readV2ExtendedDictionaryIndex(reader));
       if (extended === undefined) throw new Error("Invalid extended dictionary index");
       body += extended;
       continue;
@@ -309,6 +313,28 @@ function decodeTokenStream(
   }
 
   throw new Error("Missing end token");
+}
+
+function writeV2ExtendedDictionaryIndex(writer: BitWriter, index: number): void {
+  if (index < V2_EXTENDED_SHORT_COUNT) {
+    writer.write(0, 1);
+    writer.write(index, V2_EXTENDED_SHORT_BITS);
+    return;
+  }
+  writer.write(1, 1);
+  if (index < V2_EXTENDED_SHORT_COUNT + V2_EXTENDED_MEDIUM_COUNT) {
+    writer.write(0, 1);
+    writer.write(index - V2_EXTENDED_SHORT_COUNT, V2_EXTENDED_MEDIUM_BITS);
+    return;
+  }
+  writer.write(1, 1);
+  writer.write(index - V2_EXTENDED_SHORT_COUNT - V2_EXTENDED_MEDIUM_COUNT, V2_EXTENDED_LONG_BITS);
+}
+
+function readV2ExtendedDictionaryIndex(reader: BitReader): number {
+  if (reader.read(1) === 0) return reader.read(V2_EXTENDED_SHORT_BITS);
+  if (reader.read(1) === 0) return V2_EXTENDED_SHORT_COUNT + reader.read(V2_EXTENDED_MEDIUM_BITS);
+  return V2_EXTENDED_SHORT_COUNT + V2_EXTENDED_MEDIUM_COUNT + reader.read(V2_EXTENDED_LONG_BITS);
 }
 
 function writeTokenSymbol(writer: BitWriter, symbol: number, ranks: Map<number, number>): void {

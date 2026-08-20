@@ -18,7 +18,6 @@ import {
   SHARE_DICTIONARY,
   SHARE_DICTIONARY_BITS,
   V1_SHARE_DICTIONARY_LENGTH,
-  V2_EXTENDED_DICTIONARY_BITS,
   V2_ROUTE_SYMBOL,
   MAX_NUMBER_LENGTH,
   MAX_REF_LENGTH,
@@ -45,6 +44,7 @@ import {
   isExtendedDictionaryId,
   literalSymbol,
   v2DictionarySymbol,
+  v2ExtendedDictionaryPayloadBits,
 } from "./model";
 import {
   V2_EXTENDED_DICTIONARY,
@@ -125,6 +125,7 @@ const DEFAULT_TOKENIZE_OPTIONS: Required<TokenizeOptions> = {
 };
 
 const MAX_U64 = (1n << 64n) - 1n;
+const V2_DICTIONARY_CANDIDATES = dictionaryCandidatesByFirstCharacter();
 
 export function tokenize(
   source: string,
@@ -252,7 +253,7 @@ function tokenPayloadCost(token: Token): number {
   if (token.type === "lit") return literalPayloadCost(token.value);
   if (token.type === "cjk") return 7 + ASCII_STRUCTURED_LENGTH_BITS + Math.ceil(Math.log2(CJK_ALPHABET.length)) * token.length;
   if (token.type === "dict") return isExtendedDictionaryId(token.id) ? EXTENDED_DICTIONARY_BITS : 0;
-  if (token.type === "v2-dict") return token.extended ? V2_EXTENDED_DICTIONARY_BITS : 0;
+  if (token.type === "v2-dict") return token.extended ? v2ExtendedDictionaryPayloadBits(token.id) : 0;
   if (token.type === "share") return 7 + SHARE_DICTIONARY_BITS;
   if (token.type === "youtube") return 7 + YOUTUBE_VIDEO_PREFIX_BITS + YOUTUBE_VIDEO_ID_LENGTH * 6;
   if (token.type === "v2-route") {
@@ -380,16 +381,24 @@ function shareDictionaryMatches(source: string, position: number): Token[] {
 }
 
 function v2DictionaryMatches(source: string, position: number): Token[] {
-  const dictionary = [...V2_PRIMARY_DICTIONARY, ...V2_EXTENDED_DICTIONARY];
   const primaryLength = V2_PRIMARY_DICTIONARY.length;
   const matches: Token[] = [];
-  for (let id = 0; id < dictionary.length; id += 1) {
-    const value = dictionary[id];
+  for (const { id, value } of V2_DICTIONARY_CANDIDATES.get(source[position]) ?? []) {
     if (source.startsWith(value, position)) {
       matches.push({ type: "v2-dict", id, extended: id >= primaryLength, value });
     }
   }
   return matches;
+}
+
+function dictionaryCandidatesByFirstCharacter(): ReadonlyMap<string, readonly { id: number; value: string }[]> {
+  const candidates = new Map<string, Array<{ id: number; value: string }>>();
+  [...V2_PRIMARY_DICTIONARY, ...V2_EXTENDED_DICTIONARY].forEach((value, id) => {
+    const entries = candidates.get(value[0]) ?? [];
+    entries.push({ id, value });
+    candidates.set(value[0], entries);
+  });
+  return candidates;
 }
 
 function structuredTextMatches(source: string, position: number): Token[] {

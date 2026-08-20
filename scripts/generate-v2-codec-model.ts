@@ -35,6 +35,7 @@ type SymbolReport = {
 type TokenizerModel = {
   schemaVersion: number;
   payloadTerms: string[];
+  subwordTerms?: string[];
   symbolCodeLengths?: Partial<Record<HeaderMode["id"], number[]>>;
   hostRoutes: Record<string, Array<{
     value: string;
@@ -43,7 +44,7 @@ type TokenizerModel = {
 };
 
 const root = resolve(import.meta.dirname, "..");
-const reportLabel = process.argv[2] ?? "data/training/full-2026-08-16/reports";
+const reportLabel = process.argv[2] ?? "data/training/full-2026-08-18/reports";
 const reportDirectory = resolve(root, reportLabel);
 const output = resolve(root, process.argv[3] ?? "src/generated/v2-codec-model.ts");
 const payloadTermCount = 44;
@@ -60,7 +61,7 @@ if (headers.structuralStates !== 16 || headers.genericLeadStates !== 1) {
 }
 
 const canonical = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   structuralStates: headers.structuralStates,
   genericLeadStates: headers.genericLeadStates,
   modes: headers.modes.map((mode) => ({
@@ -74,8 +75,9 @@ const canonical = {
     tier2: mode.best.tier2.map(encodeEntry),
     tier3: mode.best.tier3.map(encodeEntry),
   })),
-  payloadTerms: tokenizer?.payloadTerms
-    ?? symbols.dictionaryTerms.slice(0, payloadTermCount).map((entry) => entry.key),
+  payloadTerms: tokenizer
+    ? [...new Set([...tokenizer.payloadTerms, ...(tokenizer.subwordTerms ?? [])])]
+    : symbols.dictionaryTerms.slice(0, payloadTermCount).map((entry) => entry.key),
   literalPriority: symbols.literalCharacters.map((entry) => entry.key).filter((value) => [...value].length === 1),
   hostRoutes: Object.fromEntries(Object.entries(tokenizer?.hostRoutes ?? {}).map(([host, routes]) => [
     host,
@@ -147,7 +149,7 @@ export type GeneratedHeaderTable = {
   readonly tier3: readonly GeneratedHeaderEntry[];
 };
 
-export const V2_CODEC_MODEL_SCHEMA = 3;
+export const V2_CODEC_MODEL_SCHEMA = 4;
 export const V2_CODEC_MODEL_HASH = ${JSON.stringify(contentHash)};
 export const V2_STRUCTURAL_STATES = 16;
 export const V2_GENERIC_LEAD_STATES = 1;

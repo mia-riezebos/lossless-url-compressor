@@ -253,10 +253,12 @@ export const END_SYMBOL = EXT_DICT_SYMBOL + 1;
 export const SYMBOL_COUNT = END_SYMBOL + 1;
 export const V2_ROUTE_SYMBOL = LITERAL_ALPHABET.length;
 export const V2_PRIMARY_DICTIONARY_OFFSET = V2_ROUTE_SYMBOL + 1;
-export const V2_EXTENDED_DICTIONARY_BITS = Math.max(
-  1,
-  Math.ceil(Math.log2(Math.max(1, V2_EXTENDED_DICTIONARY.length))),
-);
+export const V2_EXTENDED_SHORT_BITS = 6;
+export const V2_EXTENDED_MEDIUM_BITS = 10;
+export const V2_EXTENDED_LONG_BITS = 12;
+export const V2_EXTENDED_SHORT_COUNT = 1 << V2_EXTENDED_SHORT_BITS;
+export const V2_EXTENDED_MEDIUM_COUNT = 1 << V2_EXTENDED_MEDIUM_BITS;
+export const V2_EXTENDED_LONG_COUNT = 1 << V2_EXTENDED_LONG_BITS;
 
 if (SYMBOL_COUNT > 64) {
   throw new Error(`Model has ${SYMBOL_COUNT} symbols; packed MVP supports at most 64`);
@@ -264,8 +266,8 @@ if (SYMBOL_COUNT > 64) {
 if (V2_PRIMARY_DICTIONARY.length > PRIMARY_DICTIONARY.length - 1) {
   throw new Error("v2 primary dictionary must leave one direct symbol for host routes");
 }
-if (V2_EXTENDED_DICTIONARY.length > 64) {
-  throw new Error("v2 extended dictionary supports at most 64 entries");
+if (V2_EXTENDED_DICTIONARY.length > V2_EXTENDED_SHORT_COUNT + V2_EXTENDED_MEDIUM_COUNT + V2_EXTENDED_LONG_COUNT) {
+  throw new Error("v2 extended dictionary exceeds the tiered index capacity");
 }
 
 export const EXTENDED_DICTIONARY_BITS = Math.max(1, Math.ceil(Math.log2(Math.max(1, EXTENDED_DICTIONARY.length))));
@@ -355,6 +357,13 @@ export function v2ExtendedDictionaryValue(index: number): string | undefined {
 
 export function v2ExtendedDictionaryIndex(id: number): number {
   return id - V2_PRIMARY_DICTIONARY.length;
+}
+
+export function v2ExtendedDictionaryPayloadBits(id: number): number {
+  const index = v2ExtendedDictionaryIndex(id);
+  if (index < V2_EXTENDED_SHORT_COUNT) return 1 + V2_EXTENDED_SHORT_BITS;
+  if (index < V2_EXTENDED_SHORT_COUNT + V2_EXTENDED_MEDIUM_COUNT) return 2 + V2_EXTENDED_MEDIUM_BITS;
+  return 2 + V2_EXTENDED_LONG_BITS;
 }
 
 export function primaryDictionaryValue(symbol: number): string | undefined {
