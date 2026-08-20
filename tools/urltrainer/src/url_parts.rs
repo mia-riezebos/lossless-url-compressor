@@ -42,23 +42,6 @@ pub fn parse_url_parts(url: &str) -> UrlParts<'_> {
     }
 }
 
-pub fn public_suffix_len(labels: &[&str]) -> usize {
-    if labels.is_empty() {
-        return 0;
-    }
-
-    let last = labels[labels.len() - 1];
-    let prev = labels
-        .get(labels.len().wrapping_sub(2))
-        .copied()
-        .unwrap_or("");
-    if last.len() == 2 && matches!(prev, "co" | "ac" | "gov" | "com" | "org" | "net") {
-        2
-    } else {
-        1
-    }
-}
-
 fn split_once<'a>(value: &'a str, needle: &str) -> Option<(&'a str, &'a str)> {
     let index = value.find(needle)?;
     Some((&value[..index], &value[index + needle.len()..]))

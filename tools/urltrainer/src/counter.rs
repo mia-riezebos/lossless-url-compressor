@@ -4,9 +4,9 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 
 const PRUNE_FACTOR: usize = 2;
 
-pub fn bump(counter: &mut HashMap<String, u64>, key: &str, max_key_len: usize) {
+pub fn bump_by(counter: &mut HashMap<String, u64>, key: &str, max_key_len: usize, amount: u64) {
     if !key.is_empty() && key.len() <= max_key_len {
-        *counter.entry(key.to_string()).or_default() += 1;
+        *counter.entry(key.to_string()).or_default() += amount;
         prune_if_needed(counter);
     }
 }
@@ -15,7 +15,7 @@ pub fn merge_counter(target: &mut HashMap<String, u64>, source: HashMap<String, 
     for (key, count) in source {
         *target.entry(key).or_default() += count;
     }
-    prune(target);
+    prune_if_needed(target);
 }
 
 pub fn prune_if_needed(counter: &mut HashMap<String, u64>) {

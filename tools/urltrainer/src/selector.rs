@@ -1,4 +1,5 @@
 use crate::args::Args;
+use crate::corpus::TrainingUrl;
 use crate::stats::{literal_bits, scored_candidates};
 use crate::url_parts::{compression_body, parse_url_parts};
 use std::cmp::Ordering;
@@ -60,16 +61,16 @@ impl PartialOrd for HeapEntry {
 
 pub fn select_tokens(
     candidates: &HashMap<String, u64>,
-    heldout_urls: &[String],
+    heldout_urls: &[TrainingUrl],
     args: &Args,
 ) -> SelectionReport {
     let pool = scored_candidates(candidates, args.candidate_pool, args.token_cost_bits);
     let bodies = heldout_urls
         .iter()
         .take(args.heldout_urls)
-        .map(|url| Body {
-            text: compression_body(url).to_string(),
-            weight: url_weight(url, args),
+        .map(|record| Body {
+            text: compression_body(&record.url).to_string(),
+            weight: url_weight(&record.url, args) * record.analysis_weight as f64,
         })
         .collect::<Vec<_>>();
 
@@ -257,6 +258,7 @@ fn url_weight(url: &str, args: &Args) -> f64 {
 mod tests {
     use super::select_tokens;
     use crate::args::Args;
+    use crate::corpus::{Dataset, LinkClass, LinkPresentation, TrainingUrl};
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -265,6 +267,15 @@ mod tests {
             dump: PathBuf::from("dummy"),
             format: crate::args::CorpusFormat::Externallinks,
             out: PathBuf::from("dummy.md"),
+            public_suffix_list: PathBuf::from("dummy.dat"),
+            header_stats: None,
+            header_heldout: None,
+            raw_stats: None,
+            collection: "test".to_string(),
+            header_top_hosts: 100,
+            header_top_suffixes: 100,
+            header_top_terms: 100,
+            header_only: false,
             limit: 0,
             sample_every: 1,
             threads: 1,
@@ -281,6 +292,10 @@ mod tests {
             chunk_mib: 64,
             checkpoint_rows: 100_000,
             report_every_secs: 30,
+            messaging_media_filter: crate::args::MessagingMediaFilter::Expanded,
+            messaging_exclude_hosts: Vec::new(),
+            messaging_include_bots: false,
+            messaging_message_limit: 0,
         }
     }
 
@@ -289,7 +304,25 @@ mod tests {
         let mut candidates = HashMap::new();
         candidates.insert(".com".to_string(), 10);
         candidates.insert(".com/".to_string(), 10);
-        let heldout = vec!["https://example.com/path".to_string(); 10];
+        let heldout = vec![
+            TrainingUrl {
+                url: "https://example.com/path".to_string(),
+                hostname: "example.com".to_string(),
+                suffix: "com".to_string(),
+                registrable_domain: "example.com".to_string(),
+                has_www: false,
+                dataset: Dataset::Generic,
+                link_class: LinkClass::Web,
+                link_presentation: LinkPresentation::VisibleUrl,
+                source_url: None,
+                source_hostname: None,
+                source_registrable_domain: None,
+                display_text: None,
+                link_href: None,
+                analysis_weight: 1,
+            };
+            10
+        ];
 
         let report = select_tokens(&candidates, &heldout, &args());
 

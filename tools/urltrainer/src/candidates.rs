@@ -142,8 +142,8 @@ pub struct RejectedCandidates {
 }
 
 impl RejectedCandidates {
-    pub fn bump(&mut self, candidate: &str, reason: RejectionReason) {
-        *self.counts.entry(candidate.to_string()).or_default() += 1;
+    pub fn bump_by(&mut self, candidate: &str, reason: RejectionReason, amount: u64) {
+        *self.counts.entry(candidate.to_string()).or_default() += amount;
         self.reasons.entry(candidate.to_string()).or_insert(reason);
     }
 
@@ -303,8 +303,14 @@ fn is_over_specific_path_group(candidate: &str) -> bool {
 }
 
 fn is_over_specific_segment(segment: &str) -> bool {
-    if GENERIC_PATH_WORDS.contains(&segment) || segment.chars().all(|char| char.is_ascii_digit()) {
+    if GENERIC_PATH_WORDS.contains(&segment) {
         return false;
+    }
+    if segment.chars().all(|char| char.is_ascii_digit()) {
+        return segment.len() > 4;
+    }
+    if segment.starts_with('@') || has_long_hex_suffix(segment) {
+        return true;
     }
     if segment.len() > 48 {
         return true;
@@ -318,6 +324,15 @@ fn is_over_specific_segment(segment: &str) -> bool {
         .filter(|char| !char.is_ascii_alphanumeric() && !matches!(char, '-' | '_' | '.'))
         .count();
     segment.len() >= 16 && (uppercase >= 2 || punctuation > 0)
+}
+
+fn has_long_hex_suffix(segment: &str) -> bool {
+    let suffix = segment
+        .chars()
+        .rev()
+        .take_while(|char| char.is_ascii_hexdigit())
+        .collect::<Vec<_>>();
+    suffix.len() >= 12 && suffix.iter().any(|char| char.is_ascii_digit())
 }
 
 fn is_low_signal_shape(candidate: &str) -> bool {
@@ -368,5 +383,15 @@ mod tests {
             Some(RejectionReason::OverSpecificPath)
         );
         assert_eq!(candidate_rejection_reason("/wp-content/", 12), None);
+        assert_eq!(
+            candidate_rejection_reason("/channels/118456055842734083/", 12),
+            Some(RejectionReason::OverSpecificPath)
+        );
+        assert_eq!(
+            candidate_rejection_reason("/standardpackagelayout7cdbc8391fc1/", 12),
+            Some(RejectionReason::OverSpecificPath)
+        );
+        assert_eq!(candidate_rejection_reason("/wiki/", 12), None);
+        assert_eq!(candidate_rejection_reason("/2026/", 12), None);
     }
 }
