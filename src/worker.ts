@@ -19,7 +19,11 @@ app.get("/api/views", async (context) => {
 
 app.get("*", async (context) => {
   const rawUrl = context.req.raw.url;
-  if (shouldCountVisitPath(new URL(rawUrl).pathname)) {
+  const pathname = new URL(rawUrl).pathname;
+  if (isReservedApplicationPath(pathname)) {
+    return context.env.ASSETS.fetch(context.req.raw);
+  }
+  if (shouldCountVisitPath(pathname)) {
     await incrementViews(context.env);
   }
   const payload = extractPayloadSurface(rawUrl);
@@ -45,6 +49,11 @@ app.get("*", async (context) => {
 
   return context.env.ASSETS.fetch(context.req.raw);
 });
+
+function isReservedApplicationPath(pathname: string): boolean {
+  return ["/api/", "/assets/", "/cdn-cgi/"].some((prefix) => pathname.startsWith(prefix))
+    || ["/favicon.ico", "/sw.js"].includes(pathname);
+}
 
 async function readViews(env: Bindings): Promise<number | null> {
   const counter = viewCounter(env);

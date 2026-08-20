@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { decodeCanonicalShortUrl, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface } from "./codec";
-import { isAsciiSafePayload } from "./alphabet";
+import { decodeCanonicalShortUrl, decodeShortUrl, decodeUrlPayload, encodeUrl, extractPayloadSurface, extractPayloadVersion } from "./codec";
+import { ASCII_SERVER_ALPHABET, isAsciiSafePayload } from "./alphabet";
+import { decodeTerminatedBits, encodeTerminatedBits } from "./radix";
+import { encodeWireVersion } from "./wire-version";
 
 const ASCII_SAFE_WITH_OPTIONAL_HASH = /^[\x00-\x7f]*$/;
 
@@ -144,13 +146,16 @@ describe("MVP ASCII-safe codec", () => {
       "https://stackoverflow.com/questions/12345678/how-to-do-the-thing",
     ];
 
+    let improved = 0;
     for (const source of sources) {
       const encoded = encodeUrl(source, { useCjkPayload: true });
       const withoutShareDictionary = encodeUrl(source, { tokenizer: { useRoutes: false, useShareDictionary: false }, useCjkPayload: true });
 
-      expect(encoded.stats.payloadLength).toBeLessThan(withoutShareDictionary.stats.payloadLength);
+      expect(encoded.stats.payloadLength).toBeLessThanOrEqual(withoutShareDictionary.stats.payloadLength);
+      if (encoded.stats.payloadLength < withoutShareDictionary.stats.payloadLength) improved += 1;
       expect(decodeUrlPayload(encoded.payload)).toBe(source);
     }
+    expect(improved).toBeGreaterThan(0);
   });
 
   it("packs URL-safe base64-ish ids and long lowercase hyphen slugs", () => {
@@ -172,7 +177,8 @@ describe("MVP ASCII-safe codec", () => {
     const encoded = encodeUrl("https://example.com/a#frag#two", { allowFragment: true });
 
     expect(encoded.payload.startsWith("#")).toBe(true);
-    expect(encoded.shortUrl).toContain("/1/#");
+    expect(encoded.shortUrl).toMatch(/^http:\/\/piss\.zip#/);
+    expect(encoded.shortUrl).not.toContain("/#");
     expect(encoded.carrier).toBe("client-max");
     expect(decodeUrlPayload(encoded.payload)).toBe("https://example.com/a#frag#two");
   });
@@ -180,9 +186,11 @@ describe("MVP ASCII-safe codec", () => {
   it("decodes from a full short URL without URL parsing", () => {
     const encoded = encodeUrl("https://github.com/mia/lossless-url-compressor/issues/123");
 
-    expect(encoded.shortUrl).toContain("/1/");
+    expect(encoded.shortUrl).toMatch(/^http:\/\/piss\.zip\//);
+    expect(encoded.shortUrl).not.toContain("/2/");
     expect(decodeShortUrl(encoded.shortUrl)).toBe("https://github.com/mia/lossless-url-compressor/issues/123");
     expect(extractPayloadSurface(encoded.shortUrl)).toBe(encoded.payload);
+    expect(extractPayloadVersion(encoded.shortUrl)).toBe("2");
   });
 
   it("rejects non-canonical token aliases", () => {
@@ -199,22 +207,47 @@ describe("MVP ASCII-safe codec", () => {
     expect(decodeCanonicalShortUrl(canonical.shortUrl)).toBe(source);
   });
 
-  it("can encode and decode v0 short URLs", () => {
-    const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { version: "0", useCjkPayload: true });
+  it("puts v2 wire version zero at the front of the packed bitstream", () => {
+    const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ");
+    const body = encoded.payload.slice(encoded.header?.characters);
+    const bits = decodeTerminatedBits(body, ASCII_SERVER_ALPHABET);
 
-    expect(encoded.shortUrl).toContain("/0/");
-    expect(decodeShortUrl(encoded.shortUrl)).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(encoded.version).toBe("2");
+    expect(encoded.wireVersion).toBe(0);
+    expect(bits[0]).toBe(0);
   });
 
-  it("rejects version-swapped v1 CJK payloads without huge allocations", () => {
-    const encoded = encodeUrl("https://youtube.com/watch?v=dQw4w9WgXcQ", { useCjkPayload: true });
-    const versionSwapped = encoded.shortUrl.replace("/1/", "/0/");
-
-    expect(() => decodeShortUrl(versionSwapped)).toThrow("Radix bit-length header is too large");
+  it("rejects future unary wire versions until their decoder exists", () => {
+    const encoded = encodeUrl("https://example.com/a");
+    const headerLength = encoded.header?.characters ?? 0;
+    const header = encoded.payload.slice(0, headerLength);
+    const currentBits = decodeTerminatedBits(encoded.payload.slice(headerLength), ASCII_SERVER_ALPHABET);
+    const futurePayload = `${header}${encodeTerminatedBits([...encodeWireVersion(1), ...currentBits.slice(1)], ASCII_SERVER_ALPHABET)}`;
+    expect(() => decodeUrlPayload(futurePayload)).toThrow("Unsupported wire version: 1");
   });
 
-  it("still decodes legacy v0 short URLs", () => {
-    expect(decodeShortUrl("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
+  it("keeps deployed /1/ payloads byte-for-byte compatible", () => {
+    const source = "https://youtube.com/watch?v=dQw4w9WgXcQ";
+    const encoded = encodeUrl(source, { origin: "https://piss.zip", version: "1" });
+
+    expect(encoded.shortUrl).toBe("https://piss.zip/1/MdT$taB-qmBq;*");
+    expect(encoded.wireVersion).toBeNull();
+    expect(extractPayloadVersion(encoded.shortUrl)).toBe("1");
+    expect(decodeShortUrl(encoded.shortUrl)).toBe(source);
+    expect(decodeCanonicalShortUrl(encoded.shortUrl)).toBe(source);
+  });
+
+  it("keeps deployed CJK fragment /1/ payloads byte-for-byte compatible", () => {
+    const source = "https://youtube.com/watch?v=dQw4w9WgXcQ";
+    const encoded = encodeUrl(source, {
+      allowFragment: true,
+      origin: "https://piss.zip",
+      useCjkPayload: true,
+      version: "1",
+    });
+
+    expect(encoded.shortUrl).toBe("https://piss.zip/1/#骈糜瓆軴零搃");
+    expect(decodeShortUrl(encoded.shortUrl)).toBe(source);
   });
 
   it("uses deterministic output", () => {

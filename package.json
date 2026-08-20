@@ -9,7 +9,16 @@
     "worker:dev": "pnpm build && wrangler dev",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "deploy": "pnpm build && wrangler deploy"
+    "deploy": "pnpm build && wrangler deploy",
+    "train:headers:scan": "node scripts/analyze-commoncrawl-headers.mjs",
+    "train:headers:optimize": "tsx scripts/optimize-header-tables.ts",
+    "train:messaging:shards": "tsx scripts/run-messaging-shards.ts",
+    "train:reports": "cargo run --release --manifest-path tools/urltrainer/Cargo.toml -- report",
+    "train:tokenizer:base": "tsx scripts/train-v2-tokenizer.ts data/training/full-2026-08-18/reports && tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports",
+    "train:tokenizer": "pnpm train:tokenizer:base && pnpm train:tokenizer:huffman",
+    "train:tokenizer:huffman": "tsx scripts/train-v2-huffman.ts data/training/full-2026-08-18/reports && tsx scripts/generate-v2-codec-model.ts data/training/full-2026-08-18/reports",
+    "train:tokenizer:benchmark": "tsx scripts/benchmark-v2-tokenizer.ts data/training/full-2026-08-18/reports",
+    "train:codec:model": "tsx scripts/generate-v2-codec-model.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,6 +27,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260529.1",
     "@types/node": "^25.9.1",
+    "tsx": "^4.23.12",
     "typescript": "^6.0.3",
     "vite": "^8.0.14",
     "vitest": "^4.1.7",

@@ -11,6 +11,11 @@ export const CJK_ALPHABET = Array.from(
   (_, index) => String.fromCharCode(CJK_START + index),
 ).join("");
 
+// Fragment payloads may use `#` as a radix digit after the leading fragment
+// delimiter. This alphabet is reserved for the v2 carrier: changing the base
+// of deployed /1/ payloads would make their numeric representation ambiguous.
+export const CJK_CLIENT_ALPHABET = `${CJK_ALPHABET}#`;
+
 export function isAsciiSafePayload(payload: string): boolean {
   for (const char of payload) {
     if (char === "%" || char.charCodeAt(0) > 0x7f) return false;
@@ -24,6 +29,7 @@ export function isCjkPayload(payload: string): boolean {
   if (!body) return false;
 
   for (const char of body) {
+    if (payload.startsWith("#") && char === "#") continue;
     const code = char.charCodeAt(0);
     if (code < CJK_START || code > CJK_END) return false;
   }

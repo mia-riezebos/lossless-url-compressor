@@ -5,12 +5,12 @@
 Create a deterministic, stateless, lossless URL compressor for links under:
 
 ```txt
-https://l.mia.cx/<version>/<payload-surface>
+http://piss.zip/<packed-v2-payload>
 ```
 
 The compressed URL must be decodable by any conforming client or server with no database, disk, lookup service, or per-link state.
 
-This is not a conventional shortener. Short inputs may produce longer output, especially after adding the `https://l.mia.cx/` origin. That is acceptable.
+This is not a conventional shortener. Short inputs may produce longer output, especially after adding the `http://piss.zip/` carrier. That is acceptable.
 
 ## Non-goals
 
@@ -25,11 +25,11 @@ This is not a conventional shortener. Short inputs may produce longer output, es
 2. **Deterministic**: same normalized input always produces the same compressed payload.
 3. **Lossless after approved normalization**: decoding restores the normalized URL exactly.
 4. **URL-native output**: the compression algorithm emits URL-transportable characters directly.
-5. **Versioned**: algorithms can change behind path versions like `/0/`, `/1/`, etc.
+5. **Versioned**: v2 and later carry a prefix-free unary version inside the packed payload; deployed `/1/` links are the route-level compatibility exception.
 6. **Server/client modes**:
    - server-safe mode: server can read the complete token and redirect.
    - client-max mode: token may use `#`; browser JS must decode because fragments are not sent to the server.
-7. **ASCII-safe MVP first**: version `0` prioritizes a strict ASCII URL-surface codec. Unicode/CJK-dense modes are deferred.
+7. **ASCII-safe baseline plus optional CJK**: every codec version freezes the alphabet used by each supported carrier mode.
 
 ## Input normalization
 
@@ -47,10 +47,7 @@ Before compression:
    - query casing, order, separators, and spelling
    - fragment casing and spelling
 
-Then apply HTTPS omission:
-
-- If the normalized scheme is `https`, omit `https://` from the compressed source stream.
-- Otherwise encode the explicit `<scheme>://` prefix.
+For v2, remove the normalized HTTP(S) scheme from the body and encode HTTP versus HTTPS in the structural header bit. The `/1/` codec retains its historical HTTPS-omission rule.
 
 Examples:
 
@@ -78,28 +75,31 @@ Open implementation detail: avoid URL parser APIs that accidentally normalize pa
 
 ## Compressed URL shape
 
-The stable outer route is:
+The v2 outer carriers are:
 
 ```txt
-https://l.mia.cx/<version>/<payload-surface>
+http://piss.zip/<packed-payload>
+http://piss.zip#<packed-payload>
 ```
 
-Example version prefix:
+The server-safe form needs one root slash. The fragment form replaces that slash with the fragment delimiter, so it does not emit `/#`.
+
+The deployed v1 compatibility route remains:
 
 ```txt
-https://l.mia.cx/0/...
+https://piss.zip/1/<v1-payload-surface>
 ```
 
-`<payload-surface>` is not semantically divided into path/query/fragment fields. It is the opaque serialized URL surface after `/0/`.
+`<packed-payload>` is not semantically divided into path/query/fragment fields. It is an opaque serialized URL surface. Cloudflare upgrades the deliberately shorter `http` carrier to HTTPS.
 
 The codec may use URL feature characters as plain compression alphabet symbols, including characters that normally have URL structure meaning.
 
 Examples of acceptable-looking payload surfaces, subject to mode/alphabet rules:
 
 ```txt
-https://l.mia.cx/0/hiOEU87?jfkd#nfcj&dkd
-https://l.mia.cx/0/a/b?c/d?e=f#g/h?i
-https://l.mia.cx/0//?#?#?/#??#?//#?
+http://piss.zip/hiOEU87?jfkd
+http://piss.zip/a/b?c/d?e=f
+http://piss.zip#opaque-client-payload
 ```
 
 ## URL feature character semantics
@@ -119,29 +119,29 @@ Still, browser/server parsing imposes these facts:
 Examples:
 
 ```txt
-https://l.mia.cx/0/a?b?c?d
+http://piss.zip/a?b?c?d
 ```
 
 Server-visible raw target includes:
 
 ```txt
-/0/a?b?c?d
+/a?b?c?d
 ```
 
 ```txt
-https://l.mia.cx/0/a#b#c#d
+http://piss.zip#a#b#c#d
 ```
 
 Client JS sees:
 
 ```js
-location.hash === "#b#c#d"
+location.hash === "#a#b#c#d"
 ```
 
 Server sees only:
 
 ```txt
-/0/a
+/
 ```
 
 ## Carrier modes
@@ -272,7 +272,7 @@ The tokenizer may use URL segment awareness, but decoder complexity should remai
 
 ### Token budget and no-expansion parsing
 
-Each codec version must define a hard token budget before training the model. The MVP currently uses 6-bit top-level symbols, so at most 64 symbols can exist in the primary token alphabet.
+Each codec version must define a hard token budget before training the model. v2 retains at most 64 symbols in its primary token alphabet and assigns them a frozen canonical, length-limited Huffman prefix code; symbol identity is no longer a fixed six-bit field.
 
 Those symbols must cover:
 
@@ -338,12 +338,18 @@ After a working demo exists, replace hand-tuned choices with a trained dictionar
 
 ## Versioning
 
-The first path segment after the origin is the codec version.
+v2 and later encode the body wire version as a prefix-free unary value at the beginning of the independently packed body bitstream, after the self-delimiting visible host header:
 
 ```txt
-https://l.mia.cx/0/<payload-surface>
-https://l.mia.cx/1/<payload-surface>
+wire version 0 = 0
+wire version 1 = 10
+wire version 2 = 110
+wire version 3 = 1110
 ```
+
+The decoder counts leading `1` bits until the terminating `0`. The current v2 format is wire version `0`, so it costs one bit. Marketing/release version `v2` and wire version `0` are intentionally separate namespaces: old v1 predates this framing and remains available only through `/1/<payload>`.
+
+The header length is recovered from its first visible digit. The remaining radix body is converted back into bits before the unary version is read. Consequently, the version bit is amortized into the body digits and is not a dedicated visible character.
 
 A version defines:
 

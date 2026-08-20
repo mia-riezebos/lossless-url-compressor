@@ -2,29 +2,55 @@ mod args;
 mod candidates;
 mod cdxj;
 mod config;
+mod corpus;
 mod counter;
+mod cube_report;
+mod messaging;
+mod public_suffix;
 mod report;
 mod selector;
 mod sql;
 mod stats;
 mod url_parts;
+mod wat;
 
-use args::{Args, CorpusFormat};
+use args::{Args, CorpusFormat, ReportArgs};
 use clap::Parser;
+use corpus::TrainingUrl;
 use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
+use public_suffix::PublicSuffixList;
 use stats::Stats;
+use std::io::{BufRead, BufReader};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use std::io::{BufRead, BufReader};
 use std::thread;
 use std::time::{Duration, Instant};
 use url_parts::domain_index_to_url;
 
+enum WorkItem {
+    Line(String),
+    Url(Box<TrainingUrl>),
+}
+
 fn main() -> Result<(), String> {
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    if arguments
+        .get(1)
+        .is_some_and(|argument| argument == "report")
+    {
+        let report_arguments =
+            std::iter::once(arguments[0].clone()).chain(arguments.into_iter().skip(2));
+        return cube_report::generate(ReportArgs::parse_from(report_arguments));
+    }
+    run_trainer()
+}
+
+fn run_trainer() -> Result<(), String> {
     let args = Args::parse();
-    let (line_sender, line_receiver) = bounded::<String>(args.threads * 8);
+    let suffixes = Arc::new(PublicSuffixList::from_path(&args.public_suffix_list)?);
+    let (line_sender, line_receiver) = bounded::<WorkItem>(args.threads * 8);
     let (stats_sender, stats_receiver) = bounded::<Stats>(args.threads * 4);
     let processed = Arc::new(AtomicU64::new(0));
     let mut workers = Vec::new();
@@ -34,8 +60,9 @@ fn main() -> Result<(), String> {
         let stats_sender = stats_sender.clone();
         let args = args.clone();
         let processed = Arc::clone(&processed);
+        let suffixes = Arc::clone(&suffixes);
         workers.push(thread::spawn(move || {
-            worker(receiver, stats_sender, args, processed)
+            worker(receiver, stats_sender, args, processed, suffixes)
         }));
     }
     drop(stats_sender);
@@ -46,17 +73,38 @@ fn main() -> Result<(), String> {
     match args.format {
         CorpusFormat::Externallinks => {
             sql::read_insert_lines(&args.dump, args.read_order, args.chunk_mib, |line| {
-                line_sender.send(line).map_err(|err| err.to_string())
+                line_sender
+                    .send(WorkItem::Line(line))
+                    .map_err(|err| err.to_string())
             })?;
         }
         CorpusFormat::CommonCrawlCdxj => {
             cdxj::read_cdxj_lines(&args.dump, |line| {
-                line_sender.send(line).map_err(|err| err.to_string())
+                line_sender
+                    .send(WorkItem::Line(line))
+                    .map_err(|err| err.to_string())
             })?;
+        }
+        CorpusFormat::CommonCrawlWat => {
+            wat::read_wat_urls(&args.dump, args.threads, &suffixes, |url| {
+                line_sender
+                    .send(WorkItem::Url(Box::new(url)))
+                    .map_err(|err| err.to_string())
+            })?;
+        }
+        CorpusFormat::MessagingArchives => {
+            let summary = messaging::read_messaging_urls(&args.dump, &args, &suffixes, |url| {
+                line_sender
+                    .send(WorkItem::Url(Box::new(url)))
+                    .map_err(|err| err.to_string())
+            })?;
+            eprintln!("{}", summary.display());
         }
         CorpusFormat::PlainUrls => {
             read_plain_url_lines(&args.dump, |line| {
-                line_sender.send(line).map_err(|err| err.to_string())
+                line_sender
+                    .send(WorkItem::Line(line))
+                    .map_err(|err| err.to_string())
             })?;
         }
     }
@@ -66,8 +114,11 @@ fn main() -> Result<(), String> {
         worker.join().map_err(|_| "worker panicked")??;
     }
 
-    let total = aggregator.join().map_err(|_| "aggregator panicked")??;
+    let mut total = aggregator.join().map_err(|_| "aggregator panicked")??;
+    total.prune_to_limits();
+    report::write_raw_stats(&args, &total)?;
     report::write_report(&args, &total, true)?;
+    report::write_header_artifacts(&args, &total)?;
     println!(
         "wrote {} (seen={}, sampled={})",
         args.out.display(),
@@ -78,17 +129,18 @@ fn main() -> Result<(), String> {
 }
 
 fn worker(
-    receiver: Receiver<String>,
+    receiver: Receiver<WorkItem>,
     stats_sender: Sender<Stats>,
     args: Args,
     processed: Arc<AtomicU64>,
+    suffixes: Arc<PublicSuffixList>,
 ) -> Result<(), String> {
     let mut stats = Stats::new();
     let mut checkpoint_sampled = 0;
 
-    for line in receiver {
-        match args.format {
-            CorpusFormat::Externallinks => {
+    for item in receiver {
+        match (args.format, item) {
+            (CorpusFormat::Externallinks, WorkItem::Line(line)) => {
                 for (domain_index, path) in sql::parse_insert_line(&line) {
                     let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
                     stats.seen += 1;
@@ -99,8 +151,11 @@ fn worker(
                     let Some(url) = domain_index_to_url(&domain_index, &path) else {
                         continue;
                     };
+                    let Some(record) = TrainingUrl::from_unweighted(&url, &suffixes) else {
+                        continue;
+                    };
                     add_sampled_url(
-                        &url,
+                        record,
                         row,
                         &mut stats,
                         &mut checkpoint_sampled,
@@ -109,7 +164,7 @@ fn worker(
                     )?;
                 }
             }
-            CorpusFormat::CommonCrawlCdxj => {
+            (CorpusFormat::CommonCrawlCdxj, WorkItem::Line(line)) => {
                 let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
                 stats.seen += 1;
                 if !should_sample(row, &args) {
@@ -117,8 +172,11 @@ fn worker(
                 }
 
                 if let Some(url) = cdxj::extract_url(&line) {
+                    let Some(record) = TrainingUrl::from_unweighted(&url, &suffixes) else {
+                        continue;
+                    };
                     add_sampled_url(
-                        &url,
+                        record,
                         row,
                         &mut stats,
                         &mut checkpoint_sampled,
@@ -127,7 +185,7 @@ fn worker(
                     )?;
                 }
             }
-            CorpusFormat::PlainUrls => {
+            (CorpusFormat::PlainUrls, WorkItem::Line(line)) => {
                 let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
                 stats.seen += 1;
                 if !should_sample(row, &args) {
@@ -136,8 +194,11 @@ fn worker(
 
                 let url = line.trim();
                 if !url.is_empty() {
+                    let Some(record) = TrainingUrl::from_unweighted(url, &suffixes) else {
+                        continue;
+                    };
                     add_sampled_url(
-                        url,
+                        record,
                         row,
                         &mut stats,
                         &mut checkpoint_sampled,
@@ -146,6 +207,25 @@ fn worker(
                     )?;
                 }
             }
+            (
+                CorpusFormat::CommonCrawlWat | CorpusFormat::MessagingArchives,
+                WorkItem::Url(record),
+            ) => {
+                let row = processed.fetch_add(1, Ordering::Relaxed) + 1;
+                stats.seen += 1;
+                if !should_sample(row, &args) {
+                    continue;
+                }
+                add_sampled_url(
+                    *record,
+                    row,
+                    &mut stats,
+                    &mut checkpoint_sampled,
+                    &stats_sender,
+                    &args,
+                )?;
+            }
+            _ => return Err("corpus reader produced an unexpected work item".to_string()),
         }
     }
 
@@ -164,7 +244,7 @@ where
 }
 
 fn should_sample(row: u64, args: &Args) -> bool {
-    if args.sample_every != 0 && row % args.sample_every != 0 {
+    if args.sample_every != 0 && !row.is_multiple_of(args.sample_every) {
         return false;
     }
     if args.limit != 0 && row / args.sample_every.max(1) > args.limit {
@@ -174,21 +254,24 @@ fn should_sample(row: u64, args: &Args) -> bool {
 }
 
 fn add_sampled_url(
-    url: &str,
+    record: TrainingUrl,
     row: u64,
     stats: &mut Stats,
     checkpoint_sampled: &mut u64,
     stats_sender: &Sender<Stats>,
     args: &Args,
 ) -> Result<(), String> {
-    let sampled_ordinal = stats.sampled + 1;
-    stats.sampled = sampled_ordinal;
+    stats.sampled += 1;
     *checkpoint_sampled += 1;
-    let is_heldout = args.heldout_every != 0 && sampled_ordinal % args.heldout_every == 0;
+    let is_heldout = args.heldout_every != 0 && stats.sampled.is_multiple_of(args.heldout_every);
     if is_heldout {
-        stats.add_heldout_url(url, heldout_key(row), args.heldout_urls);
+        stats.add_heldout_url(record.clone(), heldout_key(row), args.heldout_urls);
     }
-    stats.add_url(url, !is_heldout, args.token_cost_bits);
+    if args.header_only {
+        stats.add_header_url(&record);
+    } else {
+        stats.add_url(&record, !is_heldout, args.token_cost_bits);
+    }
 
     if args.checkpoint_rows != 0 && *checkpoint_sampled >= args.checkpoint_rows {
         stats_sender
