@@ -62,16 +62,16 @@ describe("worker", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("asset");
-    expect(requests).toEqual(["https://l.mia.cx/"]);
+    expect(requests).toEqual(["http://l.mia.cx/"]);
   });
 
-  it("serves the app shell for legacy v0 short URLs", async () => {
+  it("redirects deployed legacy /1/ short URLs", async () => {
     const { assets, requests } = assetMock();
-    const response = await worker.fetch(new Request("https://l.mia.cx/0/一亼篗帘鳀囻頸搧茁铃遹旰觇殮嘿"), { ASSETS: assets });
+    const response = await worker.fetch(new Request("https://piss.zip/1/MdT$taB-qmBq;*"), { ASSETS: assets });
 
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe("asset");
-    expect(requests).toEqual(["https://l.mia.cx/"]);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("https://youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(requests).toEqual([]);
   });
 
   it("serves assets when no server-visible payload exists", async () => {
@@ -92,6 +92,15 @@ describe("worker", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("asset");
-    expect(requests).toEqual(["https://l.mia.cx/"]);
+    expect(requests).toEqual(["http://l.mia.cx/"]);
+  });
+
+  it("serves reserved application paths instead of treating them as v2 payloads", async () => {
+    const { assets, requests } = assetMock();
+    const response = await worker.fetch(new Request("https://piss.zip/assets/app.js"), { ASSETS: assets });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("asset");
+    expect(requests).toEqual(["https://piss.zip/assets/app.js"]);
   });
 });
